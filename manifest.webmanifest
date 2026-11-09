@@ -1,0 +1,9 @@
+{
+  "name": "ClipIA - Editor de vídeos",
+  "short_name": "ClipIA",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090e",
+  "theme_color": "#09090e",
+  "description": "Editor local de clips y subtítulos"
+}

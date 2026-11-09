@@ -1,0 +1,11 @@
+services:
+  clipia:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./outputs:/app/outputs
+    environment:
+      WHISPER_MODEL: tiny
+      MAX_UPLOAD_MB: 500
