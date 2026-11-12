@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
 const url = $('url'), rights = $('rights'), go = $('go');
-let tab = 'url', ratio = '9:16', layout = 'fill', style = 'classic', mode = 'login', shown = -1;
+let tab = 'url', ratio = '9:16', layout = 'fit', style = 'classic', mode = 'login', shown = -1;
 const valid = () => /^https?:\/\/((www|m)\.)?(youtube\.com|youtu\.be)\//i.test(url.value.trim());
 const sync = () => {
   const ok = tab === 'url' ? valid() : $('file').files.length > 0;
@@ -67,7 +67,7 @@ $('form').addEventListener('submit', async e => {
   e.preventDefault(); if (go.disabled) return;
   go.disabled = true; $('results').hidden = true; show('Enviando…', 'Preparando el trabajo.', 2);
   const o = { rights: rights.checked, count: +$('count').value, max_duration: +$('duration').value,
-    ratio, quality: +$('quality').value, captions: $('captions').checked, layout, style,
+    ratio, quality: +$('quality').value, captions: $('captions').checked, title: $('autotitle').checked, layout, style,
     topic: $('topic').value.trim(), start_at: sec($('from').value), end_at: sec($('to').value) };
   const f = $('file').files[0];
   try {

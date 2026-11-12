@@ -34,7 +34,8 @@ class Req(BaseModel):
     ratio: str = "9:16"
     quality: int = 1080
     captions: bool = True
-    layout: str = "fill"
+    layout: str = "fit"
+    title: bool = True
     style: str = "classic"
     topic: str = Field("", max_length=80)
     start_at: int = Field(0, ge=0)
@@ -78,15 +79,25 @@ def ass_time(t):
     cs = round(t * 100); h, cs = divmod(cs, 360000); m, cs = divmod(cs, 6000); s, cs = divmod(cs, 100)
     return f"{h}:{m:02}:{s:02}.{cs:02}"
 
-def write_ass(path, W, H, words, a, z, style):
+def make_title(text):
+    parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", text.strip()) if len(p.split()) >= 3]
+    best = next((p for p in parts if "?" in p), parts[0] if parts else text)
+    w = best.split(); t = " ".join(w[:8]).strip(" ,.;:¡¿")
+    return t[:1].upper() + t[1:] + ("…" if len(w) > 8 else "") if t else ""
+
+def write_ass(path, W, H, words, a, z, style, mv, title=""):
     prim, sec, kar, caps = SUB[style]
-    fs = round(min(W, H) / (13 if caps else 16)); n = 3 if caps else 4
+    fs = round(min(W, H) / (13 if caps else 16)); n = 3 if caps else 4; ts_ = round(min(W, H) / 11)
     head = ("[Script Info]\nScriptType: v4.00+\nPlayResX: %d\nPlayResY: %d\n\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,"
             "PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,"
-            "BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: D,Liberation Sans,%d,%s,%s,&H00101010,"
-            "&H00000000,1,0,0,0,100,100,0,0,1,%d,0,2,40,40,%d,1\n\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,"
-            "MarginV,Effect,Text\n") % (W, H, fs, prim, sec, max(3, fs // 14), H // 9)
+            "BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\n"
+            "Style: D,Liberation Sans,%d,%s,%s,&H00101010,&H00000000,1,0,0,0,100,100,0,0,1,%d,0,2,40,40,%d,1\n"
+            "Style: T,Liberation Sans,%d,&H0000E5FF,&H0000E5FF,&H00101010,&H00000000,1,0,0,0,100,100,0,0,1,%d,0,5,70,70,0,1\n"
+            "\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n"
+            ) % (W, H, fs, prim, sec, max(3, fs // 14), mv, ts_, max(5, ts_ // 12))
     lines = []
+    if title:
+        lines.append(f"Dialogue: 1,0:00:00.00,{ass_time(min(4.0, z - a))},T,,0,0,0,,{{\\fad(250,300)}}{title.upper()}")
     for i in range(0, len(words), n):
         g = words[i:i + n]
         x, y = max(0, g[0]["start"] - a), min(z - a, g[-1]["end"] - a)
@@ -122,6 +133,11 @@ def work(jid, r):
         if not video: raise UserError(f"El video no se descargó (el máximo es {MAX_MIN} minutos).")
         total = float(json.loads(run(["ffprobe", "-v", "quiet", "-print_format", "json",
                                       "-show_format", str(video)]))["format"]["duration"])
+        try:
+            sw, sh = (int(v) for v in run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                                           "stream=width,height", "-of", "csv=p=0", str(video)]).strip().split(",")[:2])
+        except Exception:
+            sw, sh = 16, 9
         step("Transcribiendo el audio…", 20)
         with model_lock:
             if model is None:
@@ -143,20 +159,24 @@ def work(jid, r):
         for i, (_, a, z, text) in enumerate(moments, 1):
             step(f"Exportando clip {i} de {len(moments)}…", 50 + int(48 * (i - 1) / len(moments)))
             if r.layout == "fit":
-                vf = (f"split[a][b];[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},boxblur=25:5[bg];"
-                      f"[b]scale={W}:{H}:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1")
+                w4, h4 = W // 8 * 2, H // 8 * 2
+                vf = (f"split[a][b];[a]scale={w4}:{h4}:force_original_aspect_ratio=increase,crop={w4}:{h4},boxblur=8:2,"
+                      f"scale={W}:{H}[bg];[b]scale={W}:{H}:force_original_aspect_ratio=decrease[fg];"
+                      f"[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1")
+                mv = int((H - sh * min(W / sw, H / sh)) / 2 + 24)   # subtítulos sobre el borde inferior del video
             else:
                 vf = f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1"
-            if r.captions:
-                words = [w for x in segs for w in x["words"] if w["end"] > a and w["start"] < z]
-                if words:
-                    write_ass(folder / f"{i}.ass", W, H, words, a, z, r.style)
-                    vf += f",ass={i}.ass"
+                mv = H // 9
+            words = [w for x in segs for w in x["words"] if w["end"] > a and w["start"] < z] if r.captions else []
+            title = make_title(text) if r.title else ""
+            if words or title:
+                write_ass(folder / f"{i}.ass", W, H, words, a, z, r.style, mv, title)
+                vf += f",ass={i}.ass"
             target = OUT / f"{jid}-{i}.mp4"
             run(["ffmpeg", "-y", "-ss", str(a), "-i", str(video), "-t", str(z - a), "-vf", vf, "-c:v", "libx264",
                  "-preset", "ultrafast", "-crf", "26", "-threads", "2", "-c:a", "aac", "-movflags", "+faststart", str(target)], cwd=folder)
             clips.append({"url": f"/outputs/{target.name}", "start": round(a), "end": round(z),
-                          "title": " ".join(text.split()[:9]) + "…"})
+                          "title": title or " ".join(text.split()[:9]) + "…"})
         job.update(state="done", message="Tus clips están listos.", progress=100)
     except UserError as e:
         job.update(state="error", message=str(e))
@@ -295,10 +315,10 @@ def create(r: Req, request: Request, resp: Response):
 
 @app.post("/api/upload")
 async def upload(request: Request, resp: Response, rights: bool = False, count: int = Query(5, ge=1, le=10),
-                 max_duration: int = Query(45, ge=15, le=90), ratio: str = "9:16", quality: int = 1080, captions: bool = True, layout: str = "fill", style: str = "classic",
+                 max_duration: int = Query(45, ge=15, le=90), ratio: str = "9:16", quality: int = 1080, captions: bool = True, layout: str = "fit", title: bool = True, style: str = "classic",
                  topic: str = Query("", max_length=80), start_at: int = Query(0, ge=0), end_at: int = Query(0, ge=0)):
     r = Req(rights=rights, count=count, max_duration=max_duration, ratio=ratio, quality=quality, captions=captions,
-            layout=layout, style=style, topic=topic, start_at=start_at, end_at=end_at)
+            layout=layout, title=title, style=style, topic=topic, start_at=start_at, end_at=end_at)
     vid = admit(r, request, resp)
     jid = uuid.uuid4().hex[:12]; folder = TMP / jid; folder.mkdir(); size = 0
     try:
