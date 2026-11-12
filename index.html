@@ -1,51 +1,54 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#0a0910"><meta name="description" content="Editor de vídeos ClipIA">
-<link rel="manifest" href="/manifest.webmanifest"><title>ClipIA</title>
-<style>
-:root{--bg:#09090e;--panel:#18171f;--line:#2b2935;--purple:#9184fa;--ink:#151229;--muted:#aaa7b7}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f8f7ff;font:16px system-ui,-apple-system,Segoe UI,sans-serif}
-main{max-width:780px;margin:auto;padding:22px 18px 60px}.top{display:flex;justify-content:space-between;align-items:center;color:#c9c5d7}
-.brand{font-weight:850;font-size:21px;letter-spacing:.2px}.pill{border:1px solid var(--line);padding:8px 12px;border-radius:24px;color:#c9c5d7;font-size:13px}
-h1{font-size:34px;line-height:1.1;margin:42px 0 10px}p{color:var(--muted);line-height:1.5}
-.hero{background:var(--purple);color:var(--ink);border-radius:24px;padding:22px;margin:26px 0 14px}
-.hero h2{font-size:27px;margin:0 0 5px}.hero p{color:#29234e;margin:0 0 15px}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:18px;margin:14px 0}
-h3{margin:0 0 14px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-button,.filelabel{border:0;border-radius:13px;padding:13px 16px;background:var(--purple);color:var(--ink);font-weight:750;font-size:15px;cursor:pointer;display:inline-flex;justify-content:center;align-items:center;gap:8px}
-button.secondary{background:#24222d;color:#f5f2ff;border:1px solid #373441}
-button:disabled{opacity:.45;cursor:not-allowed}input,select{background:#100f16;border:1px solid var(--line);border-radius:10px;padding:11px;color:white;width:100%;margin:6px 0 12px}
-label{display:block;color:#d9d5e5;font-size:14px;margin-top:8px}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-#status{white-space:pre-wrap;color:#b9f2d0;font-size:14px;margin-top:12px}.result a{display:block;color:#bcb3ff;margin:10px 0;overflow-wrap:anywhere}
-small,.hint{color:var(--muted);font-size:12px}.wide{width:100%}.bar{height:5px;background:#34313e;border-radius:9px;overflow:hidden;margin-top:10px}.bar span{display:block;width:0;height:100%;background:var(--purple);transition:width .2s}
-@media(max-width:520px){main{padding:18px 14px 40px}h1{font-size:30px}.grid{grid-template-columns:1fr 1fr}.panel{padding:15px}}
-</style></head><body><main>
-<header class="top"><div class="brand">✦ ClipIA</div><div class="pill">Editor gratuito · local</div></header>
-<h1>¡Crea clips que destaquen!</h1><p>Sube un vídeo, detecta escenas, genera subtítulos y adapta el formato para TikTok, Reels y Shorts.</p>
-<section class="hero"><h2>Clipar vídeo</h2><p>Selecciona un archivo de tu móvil u ordenador.</p>
-<input id="file" type="file" accept="video/*"><button id="upload" class="wide">⬆ Subir vídeo</button><div class="bar"><span id="progress"></span></div></section>
-<section class="panel"><h3>✂ Clips automáticos</h3><div class="row">
-<div><label for="maxclips">Cantidad máxima</label><select id="maxclips"><option>4</option><option selected>8</option><option>12</option><option>20</option></select></div>
-<div><label for="minsecs">Duración mínima</label><select id="minsecs"><option>5</option><option selected>8</option><option>15</option><option>20</option></select></div>
-</div><button id="clips" class="wide" disabled>Detectar escenas y crear clips</button></section>
-<section class="panel"><h3>✦ Subtítulos automáticos</h3><p class="hint">Transcripción en español con Whisper. La primera ejecución descarga el modelo y puede tardar.</p>
-<button id="subs" class="wide" disabled>Generar subtítulos</button></section>
-<section class="panel"><h3>✎ Editar y recortar</h3><div class="row">
-<div><label for="start">Inicio (segundos)</label><input id="start" type="number" min="0" step=".1" value="0"></div>
-<div><label for="end">Final (segundos, 0 = final del vídeo)</label><input id="end" type="number" min="0" step=".1" value="0"></div>
-</div><label for="aspect">Formato de salida</label><select id="aspect"><option value="9:16">9:16 · TikTok / Reels / Shorts</option><option value="1:1">1:1 · Cuadrado</option><option value="16:9">16:9 · Horizontal</option></select>
-<label><input id="burn" type="checkbox" style="width:auto"> Incrustar subtítulos si ya los generaste</label>
-<button id="edit" class="wide" disabled>Aplicar edición y descargar</button></section>
-<section class="panel"><h3>Resultados</h3><div id="status">Primero sube un vídeo para activar las herramientas.</div><div id="results" class="result"></div></section>
-<p class="hint">ClipIA procesa los vídeos en tu propio ordenador/servidor. Revisa los clips antes de publicarlos y utiliza contenido que tengas derecho a editar.</p>
-</main><script>
-let videoId=null;const $=s=>document.querySelector(s),status=$('#status'),results=$('#results');
-function busy(msg){status.textContent=msg;results.innerHTML=''}
-async function api(url,opts={}){const r=await fetch(url,opts);let d={};try{d=await r.json()}catch{}if(!r.ok)throw Error(d.detail||'Ha ocurrido un error');return d}
-function link(name,url,extra=''){const a=document.createElement('a');a.href=url;a.download='';a.textContent='⬇ '+name+(extra?' · '+extra:'');results.appendChild(a)}
-$('#upload').onclick=async()=>{const f=$('#file').files[0];if(!f)return alert('Selecciona un vídeo primero.');busy('Subiendo vídeo...');$('#progress').style.width='15%';try{const fd=new FormData();fd.append('video',f);const d=await api('/api/upload',{method:'POST',body:fd});videoId=d.video_id;status.textContent='Vídeo listo: '+d.filename+'\\nYa puedes crear clips, subtítulos o editar.';['#clips','#subs','#edit'].forEach(s=>$(s).disabled=false);$('#progress').style.width='100%'}catch(e){status.textContent=e.message;$('#progress').style.width='0%'}};
-$('#clips').onclick=async()=>{busy('Analizando escenas. El proceso depende de la duración y potencia del equipo...');try{const d=await api(`/api/clips/${encodeURIComponent(videoId)}?max_clips=${$('#maxclips').value}&min_seconds=${$('#minsecs').value}`,{method:'POST'});d.clips.forEach(c=>link(c.name,c.url,`${c.duration}s`));status.textContent=d.message||'Proceso terminado.'}catch(e){status.textContent=e.message}};
-$('#subs').onclick=async()=>{busy('Generando subtítulos. La primera vez puede tardar por la descarga del modelo Whisper...');try{const d=await api('/api/subtitles/'+encodeURIComponent(videoId),{method:'POST'});link('Descargar subtítulos SRT',d.subtitle_file);status.textContent=d.message+' Idioma detectado: '+d.language+'. Ahora puedes incrustarlos desde Editar.'}catch(e){status.textContent=e.message}};
-$('#edit').onclick=async()=>{busy('Editando vídeo y convirtiendo el formato...');try{const fd=new FormData();fd.append('start',$('#start').value);fd.append('end',$('#end').value);fd.append('aspect',$('#aspect').value);fd.append('burn_subtitles',$('#burn').checked?'true':'false');const d=await api('/api/edit/'+encodeURIComponent(videoId),{method:'POST',body:fd});link('Descargar vídeo editado',d.url,d.aspect+' · '+d.duration+'s');status.textContent='Edición terminada.'}catch(e){status.textContent=e.message}};
-if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}))}
-</script></body></html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ClipForge · Convierte tus videos de YouTube en clips con subtítulos</title>
+<meta name="description" content="Pega el enlace de un video tuyo y obtén clips verticales, cuadrados o horizontales con subtítulos automáticos.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%233a5bff'/><path d='M9 9l14 14M23 9L9 23' stroke='white' stroke-width='3' stroke-linecap='round'/></svg>">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main>
+  <header><strong class="logo">ClipForge</strong><span class="badge">Solo videos propios o con permiso</span></header>
+
+  <section class="hero">
+    <h1>Un video largo.<br>Varios clips listos para publicar.</h1>
+    <p class="lead">Pega el enlace, elige el formato y ClipForge transcribe el audio, busca los pasajes con más contenido y exporta cada clip con subtítulos.</p>
+    <div class="timeline" aria-hidden="true"><i style="--l:6%;--w:9%"></i><i style="--l:27%;--w:12%"></i><i style="--l:51%;--w:8%"></i><i style="--l:70%;--w:13%"></i><i style="--l:90%;--w:7%"></i></div>
+  </section>
+
+  <form id="form" class="panel" novalidate>
+    <div class="field">
+      <label for="url">Enlace de YouTube</label>
+      <input id="url" type="url" inputmode="url" autocomplete="off" placeholder="https://www.youtube.com/watch?v=…">
+      <p id="urlerr" class="err" role="alert" hidden>Pega un enlace de youtube.com o youtu.be.</p>
+    </div>
+    <div class="grid">
+      <div class="field"><label for="count">Número de clips</label><select id="count"><option>3</option><option selected>5</option><option>10</option></select></div>
+      <div class="field"><label for="duration">Duración máxima</label><select id="duration"><option value="30">30 s</option><option value="45" selected>45 s</option><option value="60">60 s</option></select></div>
+      <div class="field"><label for="ratio">Formato</label><select id="ratio"><option value="9:16">Vertical 9:16 (TikTok, Reels, Shorts)</option><option value="1:1">Cuadrado 1:1</option><option value="16:9">Horizontal 16:9</option></select></div>
+      <div class="field"><label for="quality">Calidad</label><select id="quality"><option value="720">720p (más rápido)</option><option value="1080" selected>1080p</option></select></div>
+    </div>
+    <label class="check"><input id="captions" type="checkbox" checked> Añadir subtítulos automáticos</label>
+    <label class="check"><input id="rights" type="checkbox"> Soy el propietario del video o tengo permiso para editarlo.</label>
+    <button id="go" type="submit" disabled>Crear clips</button>
+    <p class="note">MP4 sin marca de agua. El recorte es centrado y los clips se borran del servidor a las 2 horas.</p>
+  </form>
+
+  <section id="status" class="panel" hidden aria-live="polite">
+    <strong id="stitle">Procesando…</strong>
+    <p id="smsg"></p>
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="fill"></i></div>
+  </section>
+
+  <section id="results" class="panel" hidden>
+    <h2>Tus clips</h2>
+    <div id="clips"></div>
+  </section>
+
+  <footer>Respeta los derechos de autor y los términos de YouTube. La selección de momentos se basa en la densidad del discurso y no garantiza viralidad.</footer>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

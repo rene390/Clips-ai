@@ -1,5 +1,5 @@
 fastapi==0.115.12
-uvicorn[standard]==0.34.0
-python-multipart==0.0.20
-faster-whisper==1.1.1
-scenedetect[opencv]==0.6.6
+uvicorn[standard]==0.34.2
+yt-dlp>=2025.3.31
+faster-whisper>=1.1.1
+pydantic>=2.10
