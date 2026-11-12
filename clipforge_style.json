@@ -1,0 +1,37 @@
+{
+  "name": "Estilo vertical estilo OpusClip",
+  "canvas": { "width": 720, "height": 1280, "fps": 30, "aspect": "9:16" },
+  "layout": {
+    "background": "mismo video ampliado + desenfoque fuerte (blur 40-60)",
+    "main": "video centrado; alterna plano abierto y primer plano con zoom 1.0x / 1.6x",
+    "cuts_seconds": [0.8, 5.0, 10.3, 15.5, 17.5, 19.0]
+  },
+  "hook": {
+    "start": 0, "end": 5,
+    "position": "top, y=6%",
+    "box": { "color": "#FFFFFF", "radius": 8, "padding": "10px 16px" },
+    "text": { "font": "Montserrat ExtraBold", "size": 34, "color": "#000000", "case": "upper", "align": "center" },
+    "example": "¿PLAYA, GOLF Y COCOS DESDE TU APARTAMENTO?"
+  },
+  "captions": {
+    "mode": "word-by-word",
+    "words_per_screen": "1-2",
+    "position": "bottom third, y=78%",
+    "font": "Montserrat ExtraBold",
+    "size": 44,
+    "color": "#FFFFFF",
+    "case": "upper",
+    "shadow": "0 2px 6px rgba(0,0,0,0.6)",
+    "animation": "pop-in 80ms"
+  },
+  "emphasis_overlays": [
+    { "style": "editorial", "small": "frente a la", "big": "playa", "bg": "none", "color": "#FFFFFF", "font": "sans light + sans bold" },
+    { "style": "dark-box", "small": "hay un", "big": "campo de gol", "bg": "#1A1A1A", "color": "#FFFFFF" },
+    { "style": "white-card-serif", "small": "acceso a todos los teles", "big": "5 estrellas", "bg": "#FFFFFF", "color": "#111111", "font": "serif" }
+  ],
+  "side_label": {
+    "text": "El Mejor agente Inmobiliario",
+    "box": "#FFFFFF", "font": "italic bold", "color": "#000000"
+  },
+  "watermark": "usa tu propio logo; no copies el de OpusClip"
+}
