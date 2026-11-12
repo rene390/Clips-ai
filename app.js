@@ -31,6 +31,7 @@ async function poll(id) {
     let d;
     try {
       const r = await fetch('/api/jobs/' + id);
+      if (r.status === 404) throw new Error('El servidor se reinició o se quedó sin memoria. Vuelve a intentarlo con un video más corto.');
       if (!r.ok) throw new Error((await r.json()).detail || 'Error del servidor');
       d = await r.json(); fails = 0;
     } catch (e) { if (++fails > 4) throw e; await wait(3000); continue; }

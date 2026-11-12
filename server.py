@@ -13,7 +13,7 @@ OUT, TMP = BASE / "outputs", BASE / "tmp"
 MAX_MIN = int(os.getenv("MAX_VIDEO_MINUTES", 90))   # límite de duración del video fuente
 TTL = int(os.getenv("CLIP_TTL_HOURS", 2)) * 3600    # los clips se borran pasado este tiempo
 MAX_ACTIVE = int(os.getenv("MAX_ACTIVE_JOBS", 4))   # trabajos en cola + en curso
-WHISPER = os.getenv("WHISPER_MODEL", "small")
+WHISPER = os.getenv("WHISPER_MODEL", "tiny")
 MAX_UPLOAD = int(os.getenv("MAX_UPLOAD_MB", 500)) * 1024 * 1024
 HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
 
@@ -29,7 +29,7 @@ class UserError(Exception): pass
 class Req(BaseModel):
     youtube_url: str = Field("", max_length=300)
     rights: bool
-    count: int = Field(5, ge=1, le=10)
+    count: int = Field(3, ge=1, le=10)
     max_duration: int = Field(45, ge=15, le=90)
     ratio: str = "9:16"
     quality: int = 1080
@@ -82,7 +82,7 @@ def work(jid, r):
             step("Descargando el video…", 5)
             try:
                 run(["yt-dlp", "--no-playlist", "--socket-timeout", "30", "--match-filter", f"duration<={MAX_MIN * 60}",
-                     "-f", "bv*[height<=1080]+ba/b[height<=1080]", "--merge-output-format", "mp4",
+                     "-f", f"bv*[height<={r.quality}]+ba/b[height<={r.quality}]", "--merge-output-format", "mp4",
                      "-o", str(folder / "source.%(ext)s"), "--", r.youtube_url])
             except RuntimeError as e:
                 m = str(e).lower()
@@ -100,7 +100,8 @@ def work(jid, r):
             if model is None:
                 from faster_whisper import WhisperModel
                 model = WhisperModel(WHISPER, device="cpu", compute_type="int8")
-            stream, _ = model.transcribe(str(video), vad_filter=True, word_timestamps=True)
+            stream, _ = model.transcribe(str(video), vad_filter=True, word_timestamps=True,
+                                          beam_size=1, condition_on_previous_text=False)
             segs = [{"start": s.start, "end": s.end, "text": s.text.strip(),
                      "words": [{"start": w.start, "end": w.end, "word": w.word} for w in (s.words or [])]}
                     for s in stream]
@@ -123,7 +124,7 @@ def work(jid, r):
                        f"Outline=3,Alignment=2,MarginV={H // 12}'")
             target = OUT / f"{jid}-{i}.mp4"
             run(["ffmpeg", "-y", "-ss", str(a), "-i", str(video), "-t", str(z - a), "-vf", vf, "-c:v", "libx264",
-                 "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-movflags", "+faststart", str(target)], cwd=folder)
+                 "-preset", "ultrafast", "-crf", "26", "-threads", "2", "-c:a", "aac", "-movflags", "+faststart", str(target)], cwd=folder)
             clips.append({"url": f"/outputs/{target.name}", "start": round(a), "end": round(z),
                           "title": " ".join(text.split()[:9]) + "…"})
         job.update(state="done", message="Tus clips están listos.", progress=100, clips=clips)
