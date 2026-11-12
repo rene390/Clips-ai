@@ -12,7 +12,7 @@ uvicorn server:app --reload
 Abre http://localhost:8000. La primera vez se descarga el modelo Whisper (en CPU puede tardar).
 
 ## Configuración (variables de entorno)
-`COOKIE_SECURE` (pon 1 si usas HTTPS) · `MAX_VIDEO_MINUTES` (90) · `WHISPER_MODEL` (small) · `WORKERS` (1) · `MAX_ACTIVE_JOBS` (4) · `CLIP_TTL_HOURS` (2)
+`COOKIE_SECURE` (pon 1 si usas HTTPS) · `MAX_UPLOAD_MB` (500) · `MAX_VIDEO_MINUTES` (90) · `WHISPER_MODEL` (small) · `WORKERS` (1) · `MAX_ACTIVE_JOBS` (4) · `CLIP_TTL_HOURS` (2)
 
 ## Publicar
 `docker build -t clipforge . && docker run -p 8000:8000 clipforge`. Sirve para Render, Railway, Fly.io o un VPS. Para producción añade autenticación, rate limit por IP y almacenamiento persistente; actualiza yt-dlp con frecuencia.

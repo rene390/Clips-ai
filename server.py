@@ -2,7 +2,7 @@ import json, os, re, secrets, shutil, subprocess, threading, time, uuid, logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urlparse
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -14,6 +14,7 @@ MAX_MIN = int(os.getenv("MAX_VIDEO_MINUTES", 90))   # límite de duración del v
 TTL = int(os.getenv("CLIP_TTL_HOURS", 2)) * 3600    # los clips se borran pasado este tiempo
 MAX_ACTIVE = int(os.getenv("MAX_ACTIVE_JOBS", 4))   # trabajos en cola + en curso
 WHISPER = os.getenv("WHISPER_MODEL", "small")
+MAX_UPLOAD = int(os.getenv("MAX_UPLOAD_MB", 500)) * 1024 * 1024
 HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
 
 shutil.rmtree(TMP, ignore_errors=True)
@@ -26,7 +27,7 @@ jobs, model, model_lock = {}, None, threading.Lock()
 class UserError(Exception): pass
 
 class Req(BaseModel):
-    youtube_url: str = Field(max_length=300)
+    youtube_url: str = Field("", max_length=300)
     rights: bool
     count: int = Field(5, ge=1, le=10)
     max_duration: int = Field(45, ge=15, le=90)
@@ -38,7 +39,7 @@ def run(args, cwd=None):
     p = subprocess.run(args, capture_output=True, text=True, cwd=cwd)
     if p.returncode:
         log.error("%s falló: %s", args[0], (p.stderr or p.stdout)[-1500:])
-        raise RuntimeError(args[0])
+        raise RuntimeError((p.stderr or p.stdout)[-1500:])
     return p.stdout
 
 def ts(t):
@@ -73,18 +74,23 @@ def chunks(words, start, end, size=4):
 
 def work(jid, r):
     global model
-    folder = TMP / jid; folder.mkdir()
+    folder = TMP / jid; folder.mkdir(exist_ok=True)
     job = jobs[jid]
     def step(msg, pct): job.update(state="working", message=msg, progress=pct)
     try:
-        step("Descargando el video…", 5)
-        try:
-            run(["yt-dlp", "--no-playlist", "--socket-timeout", "30", "--match-filter", f"duration<={MAX_MIN * 60}",
-                 "-f", "bv*[height<=1080]+ba/b[height<=1080]", "--merge-output-format", "mp4",
-                 "-o", str(folder / "source.%(ext)s"), "--", r.youtube_url])
-        except RuntimeError:
-            raise UserError("No se pudo descargar el video. Revisa que sea público y no supere "
-                            f"{MAX_MIN} minutos.")
+        if r.youtube_url:
+            step("Descargando el video…", 5)
+            try:
+                run(["yt-dlp", "--no-playlist", "--socket-timeout", "30", "--match-filter", f"duration<={MAX_MIN * 60}",
+                     "-f", "bv*[height<=1080]+ba/b[height<=1080]", "--merge-output-format", "mp4",
+                     "-o", str(folder / "source.%(ext)s"), "--", r.youtube_url])
+            except RuntimeError as e:
+                m = str(e).lower()
+                if "sign in" in m or "bot" in m or "cookies" in m or "429" in m:
+                    raise UserError("YouTube bloqueó la descarga desde este servidor. Sube el archivo de tu video con el botón de arriba.")
+                if "private" in m or "unavailable" in m or "age" in m:
+                    raise UserError("Ese video es privado, no está disponible o tiene restricción de edad.")
+                raise UserError(f"No se pudo descargar el video. Prueba subiendo el archivo (máximo {MAX_MIN} minutos).")
         video = next(folder.glob("source.*"), None)
         if not video: raise UserError(f"El video no se descargó (el máximo es {MAX_MIN} minutos).")
         total = float(json.loads(run(["ffprobe", "-v", "quiet", "-print_format", "json",
@@ -160,12 +166,8 @@ def css(): return FileResponse(BASE / "style.css", media_type="text/css")
 @app.get("/api/health")
 def health(): return {"ok": True}
 
-@app.post("/api/jobs")
-def create(r: Req, request: Request, resp: Response):
+def admit(r, request, resp):
     vid = visitor(request, resp)
-    p = urlparse(r.youtube_url.strip())
-    if p.scheme not in ("http", "https") or p.hostname not in HOSTS:
-        raise HTTPException(400, "Pega un enlace de YouTube válido.")
     if not r.rights:
         raise HTTPException(400, "Debes confirmar que tienes permiso para editar este video.")
     if r.ratio not in ("9:16", "1:1", "16:9") or r.quality not in (720, 1080):
@@ -174,10 +176,37 @@ def create(r: Req, request: Request, resp: Response):
         raise HTTPException(429, "El servidor está ocupado. Inténtalo en unos minutos.")
     if any(j["user"] == vid and j["state"] in ("queued", "working") for j in jobs.values()):
         raise HTTPException(429, "Ya tienes un trabajo en curso. Espera a que termine.")
-    jid = uuid.uuid4().hex[:12]
+    return vid
+
+def enqueue(jid, vid, r):
     jobs[jid] = {"state": "queued", "message": "En cola…", "progress": 0, "clips": [], "created": time.time(), "user": vid}
     pool.submit(work, jid, r)
     return {"job_id": jid}
+
+@app.post("/api/jobs")
+def create(r: Req, request: Request, resp: Response):
+    p = urlparse(r.youtube_url.strip())
+    if p.scheme not in ("http", "https") or p.hostname not in HOSTS:
+        raise HTTPException(400, "Pega un enlace de YouTube válido.")
+    vid = admit(r, request, resp)
+    return enqueue(uuid.uuid4().hex[:12], vid, r)
+
+@app.post("/api/upload")
+async def upload(request: Request, resp: Response, rights: bool = False, count: int = Query(5, ge=1, le=10),
+                 max_duration: int = Query(45, ge=15, le=90), ratio: str = "9:16", quality: int = 1080, captions: bool = True):
+    r = Req(rights=rights, count=count, max_duration=max_duration, ratio=ratio, quality=quality, captions=captions)
+    vid = admit(r, request, resp)
+    jid = uuid.uuid4().hex[:12]; folder = TMP / jid; folder.mkdir(); size = 0
+    try:
+        with open(folder / "source.mp4", "wb") as f:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > MAX_UPLOAD: raise HTTPException(413, f"El archivo supera {MAX_UPLOAD // 1048576} MB.")
+                f.write(chunk)
+        if not size: raise HTTPException(400, "El archivo está vacío.")
+    except BaseException:
+        shutil.rmtree(folder, ignore_errors=True); raise
+    return enqueue(jid, vid, r)
 
 @app.get("/api/jobs/{jid}")
 def status(jid: str, request: Request):

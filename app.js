@@ -1,8 +1,8 @@
 const $ = id => document.getElementById(id);
 const url = $('url'), rights = $('rights'), go = $('go');
 const valid = () => /^https?:\/\/((www|m)\.)?(youtube\.com|youtu\.be)\//i.test(url.value.trim());
-const sync = () => { go.disabled = !(valid() && rights.checked); $('urlerr').hidden = !url.value.trim() || valid(); };
-url.addEventListener('input', sync); rights.addEventListener('change', sync);
+const sync = () => { go.disabled = !((valid() || $('file').files.length) && rights.checked); $('urlerr').hidden = !url.value.trim() || valid(); };
+url.addEventListener('input', sync); $('file').addEventListener('change', sync); rights.addEventListener('change', sync);
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const mmss = s => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
 
@@ -44,16 +44,21 @@ async function poll(id) {
 $('form').addEventListener('submit', async e => {
   e.preventDefault(); if (go.disabled) return;
   go.disabled = true; $('results').hidden = true; show('Enviando…', 'Preparando el trabajo.', 2);
+  const o = { rights: rights.checked, count: +$('count').value, max_duration: +$('duration').value,
+    ratio: $('ratio').value, quality: +$('quality').value, captions: $('captions').checked };
+  const f = $('file').files[0];
   try {
-    const r = await fetch('/api/jobs', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ youtube_url: url.value.trim(), rights: rights.checked, count: +$('count').value,
-        max_duration: +$('duration').value, ratio: $('ratio').value, quality: +$('quality').value, captions: $('captions').checked })
-    });
+    let r;
+    if (f) {
+      show('Subiendo el video…', 'No cierres esta página hasta que termine.', 3);
+      r = await fetch('/api/upload?' + new URLSearchParams(o), { method: 'POST', body: f });
+    } else {
+      r = await fetch('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ youtube_url: url.value.trim(), ...o }) });
+    }
     const d = await r.json();
     if (!r.ok) throw new Error(typeof d.detail === 'string' ? d.detail : 'Revisa los datos del formulario.');
     await poll(d.job_id);
   } catch (err) { show('No se pudo completar', err.message, 0); }
   finally { sync(); }
 });
-
