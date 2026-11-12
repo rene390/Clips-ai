@@ -1,4 +1,4 @@
-import json, os, re, secrets, shutil, subprocess, threading, time, uuid, logging
+import hashlib, json, os, re, secrets, shutil, sqlite3, subprocess, threading, time, uuid, logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urlparse
@@ -110,7 +110,7 @@ def work(jid, r):
         moments = pick_moments(segs, total, r.count, r.max_duration)
         W, H = {"9:16": (1080, 1920), "1:1": (1080, 1080), "16:9": (1920, 1080)}[r.ratio]
         if r.quality == 720: W, H = round(W * 2 / 3), round(H * 2 / 3)
-        clips = []
+        clips = job["clips"]   # se llena clip a clip: el sitio los muestra al instante
         for i, (_, a, z, text) in enumerate(moments, 1):
             step(f"Exportando clip {i} de {len(moments)}…", 50 + int(48 * (i - 1) / len(moments)))
             vf = f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1"
@@ -127,7 +127,7 @@ def work(jid, r):
                  "-preset", "ultrafast", "-crf", "26", "-threads", "2", "-c:a", "aac", "-movflags", "+faststart", str(target)], cwd=folder)
             clips.append({"url": f"/outputs/{target.name}", "start": round(a), "end": round(z),
                           "title": " ".join(text.split()[:9]) + "…"})
-        job.update(state="done", message="Tus clips están listos.", progress=100, clips=clips)
+        job.update(state="done", message="Tus clips están listos.", progress=100)
     except UserError as e:
         job.update(state="error", message=str(e))
     except Exception:
@@ -147,13 +147,84 @@ def cleaner():
 threading.Thread(target=cleaner, daemon=True).start()
 
 
-# ---------- Acceso directo: cada visitante recibe un id anónimo en una cookie (sin correo ni cuenta) ----------
+# ---------- Cuentas de usuario (SQLite + contraseñas PBKDF2 + cookie de sesión) ----------
+DB = BASE / "data" / "clipforge.db"; DB.parent.mkdir(exist_ok=True)
 SECURE = os.getenv("COOKIE_SECURE") == "1"   # ponlo a 1 cuando sirvas con HTTPS
+SESSION_S = 30 * 86400
+fails = {}
 
-def visitor(request, resp):
-    vid = request.cookies.get("vid") or secrets.token_urlsafe(16)
-    resp.set_cookie("vid", vid, max_age=30 * 86400, httponly=True, samesite="lax", secure=SECURE)
-    return vid
+def db():
+    c = sqlite3.connect(DB); c.row_factory = sqlite3.Row; return c
+
+with db() as c:
+    c.executescript("CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, email TEXT UNIQUE, pw TEXT, created REAL);"
+                    "CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user_id INTEGER, expires REAL);")
+
+def hash_pw(pw, salt=None):
+    salt = salt or secrets.token_bytes(16)
+    return salt.hex() + "$" + hashlib.pbkdf2_hmac("sha256", pw.encode(), salt, 300_000).hex()
+
+def check_pw(pw, stored):
+    salt, h = stored.split("$")
+    return secrets.compare_digest(hash_pw(pw, bytes.fromhex(salt)).split("$")[1], h)
+
+class Cred(BaseModel):
+    email: str = Field(max_length=120)
+    password: str = Field(min_length=8, max_length=128)
+
+def start_session(resp, uid):
+    t = secrets.token_urlsafe(32)
+    with db() as c: c.execute("INSERT INTO sessions VALUES(?,?,?)", (t, uid, time.time() + SESSION_S))
+    resp.set_cookie("session", t, max_age=SESSION_S, httponly=True, samesite="lax", secure=SECURE)
+
+def current_user(request):
+    t = request.cookies.get("session")
+    row = None
+    if t:
+        with db() as c:
+            row = c.execute("SELECT u.id, u.email FROM sessions s JOIN users u ON u.id=s.user_id "
+                            "WHERE s.token=? AND s.expires>?", (t, time.time())).fetchone()
+    if not row: raise HTTPException(401, "Inicia sesión para continuar.")
+    return row
+
+def clean_email(e):
+    e = e.strip().lower()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", e): raise HTTPException(400, "Escribe un correo válido.")
+    return e
+
+@app.post("/api/register")
+def register(c: Cred, resp: Response):
+    email = clean_email(c.email)
+    try:
+        with db() as d: uid = d.execute("INSERT INTO users(email,pw,created) VALUES(?,?,?)",
+                                        (email, hash_pw(c.password), time.time())).lastrowid
+    except sqlite3.IntegrityError:
+        raise HTTPException(400, "Ese correo ya tiene una cuenta. Inicia sesión.")
+    start_session(resp, uid)
+    return {"email": email}
+
+@app.post("/api/login")
+def login(c: Cred, resp: Response):
+    email = clean_email(c.email); now = time.time()
+    recent = [t for t in fails.get(email, []) if now - t < 600]
+    if len(recent) >= 5: raise HTTPException(429, "Demasiados intentos. Espera 10 minutos.")
+    with db() as d: row = d.execute("SELECT id, pw FROM users WHERE email=?", (email,)).fetchone()
+    if not row or not check_pw(c.password, row["pw"]):
+        fails[email] = recent + [now]
+        raise HTTPException(401, "Correo o contraseña incorrectos.")
+    fails.pop(email, None); start_session(resp, row["id"])
+    return {"email": email}
+
+@app.post("/api/logout")
+def logout(request: Request, resp: Response):
+    t = request.cookies.get("session")
+    if t:
+        with db() as d: d.execute("DELETE FROM sessions WHERE token=?", (t,))
+    resp.delete_cookie("session")
+    return {"ok": True}
+
+@app.get("/api/me")
+def me(request: Request): return {"email": current_user(request)["email"]}
 
 @app.get("/")
 def home(): return FileResponse(BASE / "index.html")
@@ -168,7 +239,7 @@ def css(): return FileResponse(BASE / "style.css", media_type="text/css")
 def health(): return {"ok": True}
 
 def admit(r, request, resp):
-    vid = visitor(request, resp)
+    vid = current_user(request)["id"]
     if not r.rights:
         raise HTTPException(400, "Debes confirmar que tienes permiso para editar este video.")
     if r.ratio not in ("9:16", "1:1", "16:9") or r.quality not in (720, 1080):
@@ -179,8 +250,8 @@ def admit(r, request, resp):
         raise HTTPException(429, "Ya tienes un trabajo en curso. Espera a que termine.")
     return vid
 
-def enqueue(jid, vid, r):
-    jobs[jid] = {"state": "queued", "message": "En cola…", "progress": 0, "clips": [], "created": time.time(), "user": vid}
+def enqueue(jid, vid, r, title):
+    jobs[jid] = {"title": title, "state": "queued", "message": "En cola…", "progress": 0, "clips": [], "created": time.time(), "user": vid}
     pool.submit(work, jid, r)
     return {"job_id": jid}
 
@@ -190,7 +261,7 @@ def create(r: Req, request: Request, resp: Response):
     if p.scheme not in ("http", "https") or p.hostname not in HOSTS:
         raise HTTPException(400, "Pega un enlace de YouTube válido.")
     vid = admit(r, request, resp)
-    return enqueue(uuid.uuid4().hex[:12], vid, r)
+    return enqueue(uuid.uuid4().hex[:12], vid, r, r.youtube_url.strip()[:70])
 
 @app.post("/api/upload")
 async def upload(request: Request, resp: Response, rights: bool = False, count: int = Query(5, ge=1, le=10),
@@ -207,9 +278,17 @@ async def upload(request: Request, resp: Response, rights: bool = False, count: 
         if not size: raise HTTPException(400, "El archivo está vacío.")
     except BaseException:
         shutil.rmtree(folder, ignore_errors=True); raise
-    return enqueue(jid, vid, r)
+    return enqueue(jid, vid, r, "Video subido")
+
+@app.get("/api/jobs")
+def my_jobs(request: Request):
+    uid = current_user(request)["id"]
+    mine = sorted((k, v) for k, v in jobs.items() if v["user"] == uid)
+    return [{"id": k, "title": v["title"], "state": v["state"], "clips": len(v["clips"])}
+            for k, v in sorted(mine, key=lambda x: -x[1]["created"])][:12]
 
 @app.get("/api/jobs/{jid}")
 def status(jid: str, request: Request):
-    if jid not in jobs or jobs[jid]["user"] != request.cookies.get("vid"): raise HTTPException(404, "Trabajo no encontrado o caducado.")
+    user = current_user(request)
+    if jid not in jobs or jobs[jid]["user"] != user["id"]: raise HTTPException(404, "Trabajo no encontrado o caducado.")
     return {k: v for k, v in jobs[jid].items() if k not in ("created", "user")}

@@ -22,3 +22,6 @@ Solo videos propios o con permiso explícito. Respeta los derechos de autor y lo
 
 ## Acceso
 Sin registro: se entra directo. Cada visitante recibe un id anónimo en una cookie, solo ve sus propios trabajos y tiene uno activo a la vez.
+
+## Cuentas
+Para entrar hay que registrarse con correo y contraseña (PBKDF2, sesión en cookie HttpOnly). Los datos van en `data/clipforge.db`: en Render gratis ese disco se borra al reiniciar o redesplegar, así que las cuentas se pierden salvo que uses un disco persistente. No incluye verificación de correo ni recuperación de contraseña.

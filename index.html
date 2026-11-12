@@ -3,52 +3,80 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ClipForge · Convierte tus videos de YouTube en clips con subtítulos</title>
-<meta name="description" content="Pega el enlace de un video tuyo y obtén clips verticales, cuadrados o horizontales con subtítulos automáticos.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%233a5bff'/><path d='M9 9l14 14M23 9L9 23' stroke='white' stroke-width='3' stroke-linecap='round'/></svg>">
+<title>ClipForge · Clips con subtítulos desde tus videos</title>
+<meta name="description" content="Pega el enlace de un video tuyo o sube el archivo y obtén clips con subtítulos automáticos.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%237b93ff'/><path d='M9 9l14 14M23 9L9 23' stroke='%230e0f13' stroke-width='3' stroke-linecap='round'/></svg>">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<main>
-  <header><strong class="logo">ClipForge</strong><span class="badge">Solo videos propios o con permiso</span></header>
+<header>
+  <button id="menu" class="icon" type="button" aria-label="Abrir menú" aria-expanded="false">☰</button>
+  <strong class="logo">ClipForge</strong>
+  <span id="who" class="who" hidden></span>
+</header>
+<nav id="nav" hidden>
+  <a href="#top">Inicio</a>
+  <a href="#projects">Proyectos recientes</a>
+  <button id="out" class="link" type="button">Salir</button>
+</nav>
 
-  <section class="hero">
-    <h1>Un video largo.<br>Varios clips listos para publicar.</h1>
-    <p class="lead">Pega el enlace, elige el formato y ClipForge transcribe el audio, busca los pasajes con más contenido y exporta cada clip con subtítulos.</p>
-    <div class="timeline" aria-hidden="true"><i style="--l:6%;--w:9%"></i><i style="--l:27%;--w:12%"></i><i style="--l:51%;--w:8%"></i><i style="--l:70%;--w:13%"></i><i style="--l:90%;--w:7%"></i></div>
-  </section>
-
-  <form id="form" class="panel" novalidate>
-    <div class="field">
-      <label for="url">Enlace de YouTube</label>
-      <input id="url" type="url" inputmode="url" autocomplete="off" placeholder="https://www.youtube.com/watch?v=…">
-      <p id="urlerr" class="err" role="alert" hidden>Pega un enlace de youtube.com o youtu.be.</p>
-    </div>
-    <div class="field">
-      <label for="file">O sube el archivo de tu video (más fiable)</label>
-      <input id="file" type="file" accept="video/*">
-    </div>
-    <div class="grid">
-      <div class="field"><label for="count">Número de clips</label><select id="count"><option selected>3</option><option>5</option><option>10</option></select></div>
-      <div class="field"><label for="duration">Duración máxima</label><select id="duration"><option value="30">30 s</option><option value="45" selected>45 s</option><option value="60">60 s</option></select></div>
-      <div class="field"><label for="ratio">Formato</label><select id="ratio"><option value="9:16">Vertical 9:16 (TikTok, Reels, Shorts)</option><option value="1:1">Cuadrado 1:1</option><option value="16:9">Horizontal 16:9</option></select></div>
-      <div class="field"><label for="quality">Calidad</label><select id="quality"><option value="720" selected>720p (más rápido)</option><option value="1080">1080p</option></select></div>
-    </div>
-    <label class="check"><input id="captions" type="checkbox" checked> Añadir subtítulos automáticos</label>
-    <label class="check"><input id="rights" type="checkbox"> Soy el propietario del video o tengo permiso para editarlo.</label>
-    <button id="go" type="submit" disabled>Crear clips</button>
-    <p class="note">MP4 sin marca de agua. El recorte es centrado y los clips se borran del servidor a las 2 horas.</p>
+<main id="top">
+  <form id="auth" class="card" novalidate>
+    <h1 id="atitle">Inicia sesión</h1>
+    <div class="field"><label for="aemail">Correo electrónico</label><input id="aemail" type="email" autocomplete="email" required></div>
+    <div class="field"><label for="apass">Contraseña (mínimo 8 caracteres)</label><input id="apass" type="password" autocomplete="current-password" minlength="8" required></div>
+    <p id="aerr" class="err" role="alert" hidden></p>
+    <button id="abtn" class="cta" type="submit">Entrar</button>
+    <p class="note"><span id="aalt">¿Aún no tienes cuenta?</span> <button id="aswitch" class="link" type="button">Crear cuenta</button></p>
   </form>
 
-  <section id="status" class="panel" hidden aria-live="polite">
+  <form id="form" class="card" novalidate hidden>
+    <h1>Convierte un video largo en clips</h1>
+    <div class="tabs" role="tablist">
+      <button id="tab-url" type="button" role="tab" aria-selected="true">Enlace de YouTube</button>
+      <button id="tab-file" type="button" role="tab" aria-selected="false">Subir archivo</button>
+    </div>
+    <div id="p-url">
+      <input id="url" type="url" inputmode="url" autocomplete="off" placeholder="Pega un enlace de YouTube" aria-label="Enlace de YouTube">
+      <p id="urlerr" class="err" role="alert" hidden>Pega un enlace de youtube.com o youtu.be.</p>
+    </div>
+    <div id="p-file" hidden>
+      <input id="file" type="file" accept="video/*" aria-label="Archivo de video">
+      <p class="note left">Más fiable que el enlace. Máximo 500 MB.</p>
+    </div>
+    <div class="chips" id="chips" role="group" aria-label="Formato">
+      <button type="button" class="chip on" data-ratio="9:16">Vertical 9:16</button>
+      <button type="button" class="chip" data-ratio="1:1">Cuadrado</button>
+      <button type="button" class="chip" data-ratio="16:9">Horizontal</button>
+      <button type="button" class="chip on" id="capchip" aria-pressed="true">Subtítulos</button>
+    </div>
+    <details>
+      <summary>Más ajustes</summary>
+      <div class="grid">
+        <div class="field"><label for="count">Clips</label><select id="count"><option selected>3</option><option>5</option><option>10</option></select></div>
+        <div class="field"><label for="duration">Duración máxima</label><select id="duration"><option value="30">30 s</option><option value="45" selected>45 s</option><option value="60">60 s</option></select></div>
+        <div class="field"><label for="quality">Calidad</label><select id="quality"><option value="720" selected>720p (rápido)</option><option value="1080">1080p</option></select></div>
+      </div>
+    </details>
+    <label class="check"><input id="rights" type="checkbox"> Soy el propietario del video o tengo permiso para editarlo.</label>
+    <button id="go" class="cta" type="submit" disabled>Crear clips</button>
+    <p class="note">MP4 sin marca de agua · recorte centrado · se borran a las 2 horas.</p>
+  </form>
+
+  <section id="status" class="card" hidden aria-live="polite">
     <strong id="stitle">Procesando…</strong>
     <p id="smsg"></p>
     <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="fill"></i></div>
   </section>
 
-  <section id="results" class="panel" hidden>
+  <section id="results" class="card" hidden>
     <h2>Tus clips</h2>
     <div id="clips"></div>
+  </section>
+
+  <section id="projects" hidden>
+    <h2>Proyectos recientes</h2>
+    <div id="plist"></div>
   </section>
 
   <footer>Respeta los derechos de autor y los términos de YouTube. La selección de momentos se basa en la densidad del discurso y no garantiza viralidad.</footer>
