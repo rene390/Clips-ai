@@ -50,3 +50,5 @@ i.lf,i.lt{aspect-ratio:9/16;height:44px}i.lt{background:linear-gradient(var(--li
 .aa{font-size:22px;line-height:44px;color:var(--ink)}.aa.y,.y{color:#ffe500}
 .prev{display:flex;gap:12px;align-items:center;margin-top:12px}.prev img{width:96px;border-radius:8px;flex:none}
 .sticky{position:sticky;bottom:0;background:linear-gradient(transparent,var(--card) 18%);padding:18px 0 0;margin-top:8px}
+
+i.tp,i.tc{aspect-ratio:9/16;height:44px}i.tp{background:linear-gradient(#fff 14%,var(--line) 14%)}i.tc{background:linear-gradient(var(--line) 38%,#ffe500 38% 58%,var(--line) 58%)}

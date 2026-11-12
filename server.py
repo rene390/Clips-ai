@@ -35,8 +35,11 @@ class Req(BaseModel):
     quality: int = 1080
     captions: bool = True
     layout: str = "fit"
+    title_pos: str = "top"
+    phrases: bool = True
+    zoom: bool = True
     title: bool = True
-    style: str = "classic"
+    style: str = "word"
     topic: str = Field("", max_length=80)
     start_at: int = Field(0, ge=0)
     end_at: int = Field(0, ge=0)
@@ -72,7 +75,8 @@ def pick_moments(segs, total, count, span, topic=""):
         if len(chosen) == count: break
     return sorted(chosen, key=lambda c: c[1]) or [(1, 0, min(total, span), segs[0]["text"])]
 
-SUB = {"classic": ("&H00FFFFFF", "&H00FFFFFF", False, False), "yellow": ("&H0000E5FF", "&H0000E5FF", False, False),
+STOP = set("para como pero porque cuando donde este esta esto estos eso esas esos aquí allí tiene tienen tengo hacer entonces también muy más menos solo cada todo todos toda todas with that this have from they there their what when your about".split())
+SUB = {"word": ("&H00FFFFFF", "&H00FFFFFF", False, False), "classic": ("&H00FFFFFF", "&H00FFFFFF", False, False), "yellow": ("&H0000E5FF", "&H0000E5FF", False, False),
        "highlight": ("&H0000E5FF", "&H00FFFFFF", True, False), "caps": ("&H00FFFFFF", "&H00FFFFFF", False, True)}
 
 def ass_time(t):
@@ -85,29 +89,68 @@ def make_title(text):
     w = best.split(); t = " ".join(w[:8]).strip(" ,.;:¡¿")
     return t[:1].upper() + t[1:] + ("…" if len(w) > 8 else "") if t else ""
 
-def write_ass(path, W, H, words, a, z, style, mv, title=""):
+def key_phrases(words, a, z, k=2):
+    ws = [(w["word"].strip(" ,.;:!?¿¡\"'()"), w["start"] - a, w["end"] - a) for w in words]
+    cand = [(len(t), i) for i, (t, s, e) in enumerate(ws) if len(t) >= 6 and t.lower() not in STOP and s >= 4 and e <= z - a - 1]
+    chosen = []
+    for _, i in sorted(cand, reverse=True):
+        if all(abs(ws[i][1] - ws[j][1]) >= 6 for j in chosen): chosen.append(i)
+        if len(chosen) == k: break
+    out = []
+    for i in sorted(chosen):
+        g = ws[max(0, i - 1):i + 2]
+        out.append((g[0][1], min(g[0][1] + 2.4, max(g[-1][2], g[0][1] + 1.4)), " ".join(t for t, _, _ in g)))
+    return out
+
+def num_cards(words, a, z):
+    """Números con su sustantivo ('5 estrellas'), con las 3 palabras previas como rótulo. Máx. 2 por clip."""
+    ws = [(w["word"].strip(" ,.;:!?¿¡\"'()"), w["start"] - a) for w in words]; ws = [(t, s) for t, s in ws if t]; out = []
+    for i in range(len(ws) - 1):
+        t, s0 = ws[i]
+        if re.fullmatch(r"\d[\d.,]*", t) and ws[i + 1][0].isalpha() and 1.5 <= s0 <= z - a - 2.2 and all(abs(s0 - o[0]) >= 5 for o in out):
+            out.append((s0, min(s0 + 2.2, z - a), f"{t} {ws[i + 1][0]}", " ".join(x for x, _ in ws[max(0, i - 3):i])))
+        if len(out) == 2: break
+    return out
+
+def write_ass(path, W, H, words, a, z, style, mv, title="", tpos="top", mt=0, phrases=(), nums=()):
     prim, sec, kar, caps = SUB[style]
-    fs = round(min(W, H) / (13 if caps else 16)); n = 3 if caps else 4; ts_ = round(min(W, H) / 11)
-    head = ("[Script Info]\nScriptType: v4.00+\nPlayResX: %d\nPlayResY: %d\n\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,"
+    one = style == "word"; m = min(W, H)
+    fs = round(m / (11 if one else 13 if caps else 16)); n = 1 if one else 3 if caps else 4
+    ts_, hs, ks = round(m / 11), round(m / 18), round(m / 14)
+    st = lambda nm, size, p, o, b, bs, out, al, ml, mvv: (f"Style: {nm},Liberation Sans,{size},{p},{p},{o},{b},1,0,0,0,100,100,0,0,"
+                                                         f"{bs},{out},0,{al},{ml},{ml},{mvv},1\n")
+    head = (f"[Script Info]\nScriptType: v4.00+\nPlayResX: {W}\nPlayResY: {H}\n\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,"
             "PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,"
             "BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\n"
-            "Style: D,Liberation Sans,%d,%s,%s,&H00101010,&H00000000,1,0,0,0,100,100,0,0,1,%d,0,2,40,40,%d,1\n"
-            "Style: T,Liberation Sans,%d,&H0000E5FF,&H0000E5FF,&H00101010,&H00000000,1,0,0,0,100,100,0,0,1,%d,0,5,70,70,0,1\n"
-            "\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n"
-            ) % (W, H, fs, prim, sec, max(3, fs // 14), mv, ts_, max(5, ts_ // 12))
-    lines = []
-    if title:
-        lines.append(f"Dialogue: 1,0:00:00.00,{ass_time(min(4.0, z - a))},T,,0,0,0,,{{\\fad(250,300)}}{title.upper()}")
+            f"Style: D,Liberation Sans,{fs},{prim},{sec},&H00101010,&H00000000,1,0,0,0,100,100,0,0,1,{max(3, fs // 14)},0,2,40,40,{mv},1\n"
+            + st("T", ts_, "&H0000E5FF", "&H00101010", "&H00000000", 1, max(5, ts_ // 12), 5, 70, 0)
+            + st("H", hs, "&H00101010", "&H00FFFFFF", "&H00FFFFFF", 3, hs // 4, 8, 60, mt)
+            + st("K", ks, "&H00FFFFFF", "&H00181818", "&H00181818", 3, ks // 4, 5, 60, 0)
+            + "\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n")
+    lines, T = [], ass_time(min(4.0, z - a))
+    if title and tpos == "top":
+        lines.append(f"Dialogue: 1,0:00:00.00,{T},H,,0,0,0,,{{\\fad(200,250)}}{title.upper()}")
+    elif title:
+        lines.append(f"Dialogue: 1,0:00:00.00,{T},T,,0,0,0,,{{\\fad(250,300)}}{title.upper()}")
+    ns, nl = round(m / 9), round(m / 26)
+    for s0, e0, txt, lab in nums:   # tarjeta blanca con número en serif, como en el video de referencia
+        lines.append(f"Dialogue: 2,{ass_time(s0)},{ass_time(e0)},K,,0,0,0,,{{\\an5\\pos({W // 2},{int(H * .40)})\\c&H00141414&\\3c&H00FFFFFF&"
+                     f"\\4c&H00FFFFFF&\\fad(150,200)}}{{\\fs{nl}\\b0\\c&H00555555&}}{lab}\\N{{\\fnLiberation Serif\\fs{ns}\\b0\\c&H00141414&}}{txt}")
+    for s0, e0, txt in phrases:
+        lines.append(f"Dialogue: 2,{ass_time(s0)},{ass_time(e0)},K,,0,0,0,,{{\\an5\\pos({W // 2},{int(H * .40)})"
+                     f"\\fscx60\\fscy60\\t(0,180,\\fscx100\\fscy100)\\fad(120,150)}}{txt}")
     for i in range(0, len(words), n):
         g = words[i:i + n]
         x, y = max(0, g[0]["start"] - a), min(z - a, g[-1]["end"] - a)
+        if one: y = max(y, min(x + .25, z - a))
         if y <= x: continue
         parts = []
         for j, w in enumerate(g):
             nxt = g[j + 1]["start"] if j + 1 < len(g) else g[-1]["end"]
             t = w["word"].strip().replace("{", "").replace("}", "")
-            parts.append((f"{{\\k{max(1, round((nxt - w['start']) * 100))}}}" if kar else "") + (t.upper() if caps else t))
-        lines.append(f"Dialogue: 0,{ass_time(x)},{ass_time(y)},D,,0,0,0,,{' '.join(parts)}")
+            parts.append((f"{{\\k{max(1, round((nxt - w['start']) * 100))}}}" if kar else "") + (t.upper() if caps or one else t))
+        pop = "{\\fscx80\\fscy80\\t(0,110,\\fscx100\\fscy100)}" if one else ""
+        lines.append(f"Dialogue: 0,{ass_time(x)},{ass_time(y)},D,,0,0,0,,{pop}{' '.join(parts)}")
     path.write_text(head + "\n".join(lines) + "\n", encoding="utf-8")
 
 def work(jid, r):
@@ -163,14 +206,21 @@ def work(jid, r):
                 vf = (f"split[a][b];[a]scale={w4}:{h4}:force_original_aspect_ratio=increase,crop={w4}:{h4},boxblur=8:2,"
                       f"scale={W}:{H}[bg];[b]scale={W}:{H}:force_original_aspect_ratio=decrease[fg];"
                       f"[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1")
-                mv = int((H - sh * min(W / sw, H / sh)) / 2 + 24)   # subtítulos sobre el borde inferior del video
+                gap = (H - sh * min(W / sw, H / sh)) / 2
+                mv, mt = int(gap + 24), int(gap + 20)   # subtítulos y título pegados a los bordes del video
             else:
                 vf = f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1"
-                mv = H // 9
-            words = [w for x in segs for w in x["words"] if w["end"] > a and w["start"] < z] if r.captions else []
+                mv, mt = H // 9, H // 14
+            if r.zoom:   # empuje de zoom lento que se reinicia cada 5 s (como en los editores)
+                vf += f",scale=w='trunc(iw*(1+0.015*mod(t,5))/2)*2':h=-2:eval=frame,crop={W}:{H}"
+            allw = [w for x in segs for w in x["words"] if w["end"] > a and w["start"] < z]
+            words = allw if r.captions else []
+            nums = num_cards(allw, a, z) if r.phrases else []
+            phr = [p for p in (key_phrases(allw, a, z) if r.phrases else ()) if all(abs(p[0] - n[0]) >= 3 for n in nums)]
             title = make_title(text) if r.title else ""
-            if words or title:
-                write_ass(folder / f"{i}.ass", W, H, words, a, z, r.style, mv, title)
+            if words or title or nums or phr:
+                write_ass(folder / f"{i}.ass", W, H, words, a, z, r.style, mv, title, r.title_pos, mt,
+                          phr, nums)
                 vf += f",ass={i}.ass"
             target = OUT / f"{jid}-{i}.mp4"
             run(["ffmpeg", "-y", "-ss", str(a), "-i", str(video), "-t", str(z - a), "-vf", vf, "-c:v", "libx264",
@@ -292,7 +342,7 @@ def admit(r, request, resp):
     vid = current_user(request)["id"]
     if not r.rights:
         raise HTTPException(400, "Debes confirmar que tienes permiso para editar este video.")
-    if r.ratio not in ("9:16", "1:1", "16:9", "4:5") or r.quality not in (720, 1080) or r.layout not in ("fill", "fit") or r.style not in SUB:
+    if r.ratio not in ("9:16", "1:1", "16:9", "4:5") or r.quality not in (720, 1080) or r.layout not in ("fill", "fit") or r.title_pos not in ("top", "center") or r.style not in SUB:
         raise HTTPException(400, "Ajustes no válidos.")
     if sum(j["state"] in ("queued", "working") for j in jobs.values()) >= MAX_ACTIVE:
         raise HTTPException(429, "El servidor está ocupado. Inténtalo en unos minutos.")
@@ -315,10 +365,10 @@ def create(r: Req, request: Request, resp: Response):
 
 @app.post("/api/upload")
 async def upload(request: Request, resp: Response, rights: bool = False, count: int = Query(5, ge=1, le=10),
-                 max_duration: int = Query(45, ge=15, le=90), ratio: str = "9:16", quality: int = 1080, captions: bool = True, layout: str = "fit", title: bool = True, style: str = "classic",
+                 max_duration: int = Query(45, ge=15, le=90), ratio: str = "9:16", quality: int = 1080, captions: bool = True, layout: str = "fit", title: bool = True, title_pos: str = "top", phrases: bool = True, zoom: bool = True, style: str = "word",
                  topic: str = Query("", max_length=80), start_at: int = Query(0, ge=0), end_at: int = Query(0, ge=0)):
     r = Req(rights=rights, count=count, max_duration=max_duration, ratio=ratio, quality=quality, captions=captions,
-            layout=layout, title=title, style=style, topic=topic, start_at=start_at, end_at=end_at)
+            layout=layout, title=title, title_pos=title_pos, phrases=phrases, zoom=zoom, style=style, topic=topic, start_at=start_at, end_at=end_at)
     vid = admit(r, request, resp)
     jid = uuid.uuid4().hex[:12]; folder = TMP / jid; folder.mkdir(); size = 0
     try:

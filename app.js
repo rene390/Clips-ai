@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
 const url = $('url'), rights = $('rights'), go = $('go');
-let tab = 'url', ratio = '9:16', layout = 'fit', style = 'classic', mode = 'login', shown = -1;
+let tab = 'url', ratio = '9:16', layout = 'fit', style = 'word', tpos = 'top', mode = 'login', shown = -1;
 const valid = () => /^https?:\/\/((www|m)\.)?(youtube\.com|youtu\.be)\//i.test(url.value.trim());
 const sync = () => {
   const ok = tab === 'url' ? valid() : $('file').files.length > 0;
@@ -19,7 +19,7 @@ $('tab-url').onclick = () => setTab('url'); $('tab-file').onclick = () => setTab
 $('form').addEventListener('click', e => {
   const b = e.target.closest('.tile'); if (!b) return;
   b.parentElement.querySelectorAll('.tile').forEach(t => t.classList.toggle('on', t === b));
-  ratio = b.dataset.ratio || ratio; layout = b.dataset.layout || layout; style = b.dataset.style || style;
+  ratio = b.dataset.ratio || ratio; layout = b.dataset.layout || layout; style = b.dataset.style || style; tpos = b.dataset.tpos || tpos;
 });
 const sec = v => { const p = v.trim().split(':').map(Number); return !v.trim() || p.some(isNaN) ? 0 : p.reduce((a, n) => a * 60 + n, 0); };
 let pt; url.addEventListener('input', () => {
@@ -67,7 +67,7 @@ $('form').addEventListener('submit', async e => {
   e.preventDefault(); if (go.disabled) return;
   go.disabled = true; $('results').hidden = true; show('Enviando…', 'Preparando el trabajo.', 2);
   const o = { rights: rights.checked, count: +$('count').value, max_duration: +$('duration').value,
-    ratio, quality: +$('quality').value, captions: $('captions').checked, title: $('autotitle').checked, layout, style,
+    ratio, quality: +$('quality').value, captions: $('captions').checked, title: $('autotitle').checked, title_pos: tpos, phrases: $('phrases').checked, zoom: $('zoomauto').checked, layout, style,
     topic: $('topic').value.trim(), start_at: sec($('from').value), end_at: sec($('to').value) };
   const f = $('file').files[0];
   try {
