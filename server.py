@@ -34,6 +34,11 @@ class Req(BaseModel):
     ratio: str = "9:16"
     quality: int = 1080
     captions: bool = True
+    layout: str = "fill"
+    style: str = "classic"
+    topic: str = Field("", max_length=80)
+    start_at: int = Field(0, ge=0)
+    end_at: int = Field(0, ge=0)
 
 def run(args, cwd=None):
     p = subprocess.run(args, capture_output=True, text=True, cwd=cwd)
@@ -46,7 +51,8 @@ def ts(t):
     n = round(t * 1000); h, n = divmod(n, 3600000); m, n = divmod(n, 60000); s, n = divmod(n, 1000)
     return f"{h:02}:{m:02}:{s:02},{n:03}"
 
-def pick_moments(segs, total, count, span):
+def pick_moments(segs, total, count, span, topic=""):
+    kw = [w for w in re.findall(r"\w+", topic.lower()) if len(w) > 2]
     """Ventanas que empiezan y terminan en límites de frase (sin cortar a mitad)."""
     lo, cands = min(15, span), []
     for i, a in enumerate(segs):
@@ -57,6 +63,7 @@ def pick_moments(segs, total, count, span):
         text = " ".join(s["text"] for s in inside)
         words = len(text.split())
         score = words / (end - start) + 0.15 * text.count("?") + 0.1 * text.count("!")
+        score += 3 * sum(w in text.lower() for w in kw)
         cands.append((score, max(0, start - .2), min(total, end + .3), text))
     chosen = []
     for c in sorted(cands, reverse=True):
@@ -64,13 +71,33 @@ def pick_moments(segs, total, count, span):
         if len(chosen) == count: break
     return sorted(chosen, key=lambda c: c[1]) or [(1, 0, min(total, span), segs[0]["text"])]
 
-def chunks(words, start, end, size=4):
-    out = []
-    for i in range(0, len(words), size):
-        g = words[i:i + size]
-        a, z = max(0, g[0]["start"] - start), min(end - start, g[-1]["end"] - start)
-        if z > a: out.append((a, z, " ".join(w["word"].strip() for w in g)))
-    return out
+SUB = {"classic": ("&H00FFFFFF", "&H00FFFFFF", False, False), "yellow": ("&H0000E5FF", "&H0000E5FF", False, False),
+       "highlight": ("&H0000E5FF", "&H00FFFFFF", True, False), "caps": ("&H00FFFFFF", "&H00FFFFFF", False, True)}
+
+def ass_time(t):
+    cs = round(t * 100); h, cs = divmod(cs, 360000); m, cs = divmod(cs, 6000); s, cs = divmod(cs, 100)
+    return f"{h}:{m:02}:{s:02}.{cs:02}"
+
+def write_ass(path, W, H, words, a, z, style):
+    prim, sec, kar, caps = SUB[style]
+    fs = round(min(W, H) / (13 if caps else 16)); n = 3 if caps else 4
+    head = ("[Script Info]\nScriptType: v4.00+\nPlayResX: %d\nPlayResY: %d\n\n[V4+ Styles]\nFormat: Name,Fontname,Fontsize,"
+            "PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,"
+            "BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\nStyle: D,Liberation Sans,%d,%s,%s,&H00101010,"
+            "&H00000000,1,0,0,0,100,100,0,0,1,%d,0,2,40,40,%d,1\n\n[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,"
+            "MarginV,Effect,Text\n") % (W, H, fs, prim, sec, max(3, fs // 14), H // 9)
+    lines = []
+    for i in range(0, len(words), n):
+        g = words[i:i + n]
+        x, y = max(0, g[0]["start"] - a), min(z - a, g[-1]["end"] - a)
+        if y <= x: continue
+        parts = []
+        for j, w in enumerate(g):
+            nxt = g[j + 1]["start"] if j + 1 < len(g) else g[-1]["end"]
+            t = w["word"].strip().replace("{", "").replace("}", "")
+            parts.append((f"{{\\k{max(1, round((nxt - w['start']) * 100))}}}" if kar else "") + (t.upper() if caps else t))
+        lines.append(f"Dialogue: 0,{ass_time(x)},{ass_time(y)},D,,0,0,0,,{' '.join(parts)}")
+    path.write_text(head + "\n".join(lines) + "\n", encoding="utf-8")
 
 def work(jid, r):
     global model
@@ -105,23 +132,26 @@ def work(jid, r):
             segs = [{"start": s.start, "end": s.end, "text": s.text.strip(),
                      "words": [{"start": w.start, "end": w.end, "word": w.word} for w in (s.words or [])]}
                     for s in stream]
-        if not segs: raise UserError("No se detectó voz en el video.")
+        if r.start_at or r.end_at:
+            segs = [x for x in segs if x["end"] > r.start_at and (not r.end_at or x["start"] < r.end_at)]
+        if not segs: raise UserError("No se detectó voz en el video (o en el rango elegido).")
         step("Buscando los mejores momentos…", 50)
-        moments = pick_moments(segs, total, r.count, r.max_duration)
-        W, H = {"9:16": (1080, 1920), "1:1": (1080, 1080), "16:9": (1920, 1080)}[r.ratio]
+        moments = pick_moments(segs, total, r.count, r.max_duration, r.topic)
+        W, H = {"9:16": (1080, 1920), "1:1": (1080, 1080), "16:9": (1920, 1080), "4:5": (1080, 1350)}[r.ratio]
         if r.quality == 720: W, H = round(W * 2 / 3), round(H * 2 / 3)
         clips = job["clips"]   # se llena clip a clip: el sitio los muestra al instante
         for i, (_, a, z, text) in enumerate(moments, 1):
             step(f"Exportando clip {i} de {len(moments)}…", 50 + int(48 * (i - 1) / len(moments)))
-            vf = f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1"
+            if r.layout == "fit":
+                vf = (f"split[a][b];[a]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},boxblur=25:5[bg];"
+                      f"[b]scale={W}:{H}:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1")
+            else:
+                vf = f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1"
             if r.captions:
-                words = [w for s in segs for w in s["words"] if w["end"] > a and w["start"] < z]
-                lines = [f"{n}\n{ts(x)} --> {ts(y)}\n{t}\n" for n, (x, y, t) in enumerate(chunks(words, a, z), 1)]
-                (folder / f"{i}.srt").write_text("\n".join(lines), encoding="utf-8")
-                fs = round(min(W, H) / 17)
-                vf += (f",subtitles={i}.srt:original_size={W}x{H}:force_style='FontName=Liberation Sans,Bold=1,"
-                       f"FontSize={fs},PrimaryColour=&H00FFFFFF,OutlineColour=&H00101010,BorderStyle=1,"
-                       f"Outline=3,Alignment=2,MarginV={H // 12}'")
+                words = [w for x in segs for w in x["words"] if w["end"] > a and w["start"] < z]
+                if words:
+                    write_ass(folder / f"{i}.ass", W, H, words, a, z, r.style)
+                    vf += f",ass={i}.ass"
             target = OUT / f"{jid}-{i}.mp4"
             run(["ffmpeg", "-y", "-ss", str(a), "-i", str(video), "-t", str(z - a), "-vf", vf, "-c:v", "libx264",
                  "-preset", "ultrafast", "-crf", "26", "-threads", "2", "-c:a", "aac", "-movflags", "+faststart", str(target)], cwd=folder)
@@ -242,7 +272,7 @@ def admit(r, request, resp):
     vid = current_user(request)["id"]
     if not r.rights:
         raise HTTPException(400, "Debes confirmar que tienes permiso para editar este video.")
-    if r.ratio not in ("9:16", "1:1", "16:9") or r.quality not in (720, 1080):
+    if r.ratio not in ("9:16", "1:1", "16:9", "4:5") or r.quality not in (720, 1080) or r.layout not in ("fill", "fit") or r.style not in SUB:
         raise HTTPException(400, "Ajustes no válidos.")
     if sum(j["state"] in ("queued", "working") for j in jobs.values()) >= MAX_ACTIVE:
         raise HTTPException(429, "El servidor está ocupado. Inténtalo en unos minutos.")
@@ -265,8 +295,10 @@ def create(r: Req, request: Request, resp: Response):
 
 @app.post("/api/upload")
 async def upload(request: Request, resp: Response, rights: bool = False, count: int = Query(5, ge=1, le=10),
-                 max_duration: int = Query(45, ge=15, le=90), ratio: str = "9:16", quality: int = 1080, captions: bool = True):
-    r = Req(rights=rights, count=count, max_duration=max_duration, ratio=ratio, quality=quality, captions=captions)
+                 max_duration: int = Query(45, ge=15, le=90), ratio: str = "9:16", quality: int = 1080, captions: bool = True, layout: str = "fill", style: str = "classic",
+                 topic: str = Query("", max_length=80), start_at: int = Query(0, ge=0), end_at: int = Query(0, ge=0)):
+    r = Req(rights=rights, count=count, max_duration=max_duration, ratio=ratio, quality=quality, captions=captions,
+            layout=layout, style=style, topic=topic, start_at=start_at, end_at=end_at)
     vid = admit(r, request, resp)
     jid = uuid.uuid4().hex[:12]; folder = TMP / jid; folder.mkdir(); size = 0
     try:
@@ -279,6 +311,18 @@ async def upload(request: Request, resp: Response, rights: bool = False, count: 
     except BaseException:
         shutil.rmtree(folder, ignore_errors=True); raise
     return enqueue(jid, vid, r, "Video subido")
+
+@app.get("/api/preview")
+def preview(request: Request, url: str):
+    current_user(request)
+    if urlparse(url).hostname not in HOSTS: raise HTTPException(400, "Enlace no válido.")
+    try:
+        from urllib.request import urlopen
+        from urllib.parse import quote
+        with urlopen("https://www.youtube.com/oembed?format=json&url=" + quote(url, safe=""), timeout=6) as f: d = json.load(f)
+        return {"title": d.get("title", ""), "thumb": d.get("thumbnail_url", "")}
+    except Exception:
+        raise HTTPException(404, "Sin vista previa.")
 
 @app.get("/api/jobs")
 def my_jobs(request: Request):

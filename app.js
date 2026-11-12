@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
 const url = $('url'), rights = $('rights'), go = $('go');
-let tab = 'url', ratio = '9:16', captions = true, mode = 'login', shown = -1;
+let tab = 'url', ratio = '9:16', layout = 'fill', style = 'classic', mode = 'login', shown = -1;
 const valid = () => /^https?:\/\/((www|m)\.)?(youtube\.com|youtu\.be)\//i.test(url.value.trim());
 const sync = () => {
   const ok = tab === 'url' ? valid() : $('file').files.length > 0;
@@ -16,10 +16,16 @@ function setTab(t) {
   $('p-url').hidden = t !== 'url'; $('p-file').hidden = t !== 'file'; sync();
 }
 $('tab-url').onclick = () => setTab('url'); $('tab-file').onclick = () => setTab('file');
-$('chips').addEventListener('click', e => {
-  const b = e.target.closest('.chip'); if (!b) return;
-  if (b.id === 'capchip') { captions = !captions; b.classList.toggle('on', captions); b.setAttribute('aria-pressed', captions); return; }
-  ratio = b.dataset.ratio; document.querySelectorAll('[data-ratio]').forEach(c => c.classList.toggle('on', c === b));
+$('form').addEventListener('click', e => {
+  const b = e.target.closest('.tile'); if (!b) return;
+  b.parentElement.querySelectorAll('.tile').forEach(t => t.classList.toggle('on', t === b));
+  ratio = b.dataset.ratio || ratio; layout = b.dataset.layout || layout; style = b.dataset.style || style;
+});
+const sec = v => { const p = v.trim().split(':').map(Number); return !v.trim() || p.some(isNaN) ? 0 : p.reduce((a, n) => a * 60 + n, 0); };
+let pt; url.addEventListener('input', () => {
+  clearTimeout(pt); $('prev').hidden = true; if (!valid()) return;
+  pt = setTimeout(async () => { try { const r = await fetch('/api/preview?url=' + encodeURIComponent(url.value.trim()));
+    if (!r.ok) return; const d = await r.json(); $('pimg').src = d.thumb; $('ptitle').textContent = d.title; $('prev').hidden = false; } catch (e) {} }, 500);
 });
 $('menu').onclick = () => { const o = $('nav').hidden; $('nav').hidden = !o; $('menu').setAttribute('aria-expanded', o); };
 $('nav').addEventListener('click', e => { if (e.target.tagName === 'A') $('nav').hidden = true; });
@@ -61,7 +67,8 @@ $('form').addEventListener('submit', async e => {
   e.preventDefault(); if (go.disabled) return;
   go.disabled = true; $('results').hidden = true; show('Enviando…', 'Preparando el trabajo.', 2);
   const o = { rights: rights.checked, count: +$('count').value, max_duration: +$('duration').value,
-    ratio, quality: +$('quality').value, captions };
+    ratio, quality: +$('quality').value, captions: $('captions').checked, layout, style,
+    topic: $('topic').value.trim(), start_at: sec($('from').value), end_at: sec($('to').value) };
   const f = $('file').files[0];
   try {
     let r;

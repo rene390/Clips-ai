@@ -40,15 +40,29 @@
       <input id="url" type="url" inputmode="url" autocomplete="off" placeholder="Pega un enlace de YouTube" aria-label="Enlace de YouTube">
       <p id="urlerr" class="err" role="alert" hidden>Pega un enlace de youtube.com o youtu.be.</p>
     </div>
+    <div id="prev" class="prev" hidden><img id="pimg" alt=""><strong id="ptitle"></strong></div>
     <div id="p-file" hidden>
       <input id="file" type="file" accept="video/*" aria-label="Archivo de video">
       <p class="note left">Más fiable que el enlace. Máximo 500 MB.</p>
     </div>
-    <div class="chips" id="chips" role="group" aria-label="Formato">
-      <button type="button" class="chip on" data-ratio="9:16">Vertical 9:16</button>
-      <button type="button" class="chip" data-ratio="1:1">Cuadrado</button>
-      <button type="button" class="chip" data-ratio="16:9">Horizontal</button>
-      <button type="button" class="chip on" id="capchip" aria-pressed="true">Subtítulos</button>
+    <h3>Relación de aspecto</h3>
+    <div class="tiles">
+      <button type="button" class="tile on" data-ratio="9:16"><i style="aspect-ratio:9/16"></i>9:16</button>
+      <button type="button" class="tile" data-ratio="16:9"><i style="aspect-ratio:16/9"></i>16:9</button>
+      <button type="button" class="tile" data-ratio="1:1"><i style="aspect-ratio:1"></i>1:1</button>
+      <button type="button" class="tile" data-ratio="4:5"><i style="aspect-ratio:4/5"></i>4:5</button>
+    </div>
+    <h3>Diseño</h3>
+    <div class="tiles">
+      <button type="button" class="tile on" data-layout="fill"><i class="lf"></i>Llenar</button>
+      <button type="button" class="tile" data-layout="fit"><i class="lt"></i>Ajustar</button>
+    </div>
+    <h3>Subtítulos <input id="captions" type="checkbox" checked aria-label="Subtítulos activados"></h3>
+    <div class="tiles">
+      <button type="button" class="tile on" data-style="classic"><b class="aa">Aa</b>Clásico</button>
+      <button type="button" class="tile" data-style="yellow"><b class="aa y">Aa</b>Amarillo</button>
+      <button type="button" class="tile" data-style="highlight"><b class="aa"><span class="y">A</span>a</b>Resaltado</button>
+      <button type="button" class="tile" data-style="caps"><b class="aa">AA</b>Mayúsculas</button>
     </div>
     <details>
       <summary>Más ajustes</summary>
@@ -56,10 +70,15 @@
         <div class="field"><label for="count">Clips</label><select id="count"><option selected>3</option><option>5</option><option>10</option></select></div>
         <div class="field"><label for="duration">Duración máxima</label><select id="duration"><option value="30">30 s</option><option value="45" selected>45 s</option><option value="60">60 s</option></select></div>
         <div class="field"><label for="quality">Calidad</label><select id="quality"><option value="720" selected>720p (rápido)</option><option value="1080">1080p</option></select></div>
+        <div class="field"><label for="from">Desde (mm:ss)</label><input id="from" type="text" inputmode="numeric" placeholder="0:00"></div>
+        <div class="field"><label for="to">Hasta (mm:ss)</label><input id="to" type="text" inputmode="numeric" placeholder="final"></div>
       </div>
+      <div class="field"><label for="topic">Momentos a incluir (opcional)</label><input id="topic" type="text" maxlength="80" placeholder="Ej: carreras, chistes, consejos"></div>
     </details>
-    <label class="check"><input id="rights" type="checkbox"> Soy el propietario del video o tengo permiso para editarlo.</label>
-    <button id="go" class="cta" type="submit" disabled>Crear clips</button>
+    <div class="sticky">
+          <label class="check"><input id="rights" type="checkbox"> Soy el propietario del video o tengo permiso para editarlo.</label>
+      <button id="go" class="cta" type="submit" disabled>Crear clips</button>
+    </div>
     <p class="note">MP4 sin marca de agua · recorte centrado · se borran a las 2 horas.</p>
   </form>
 
