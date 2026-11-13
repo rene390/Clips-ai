@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 const url = $('url'), rights = $('rights'), go = $('go');
 let tab = 'url', ratio = '9:16', layout = 'fit', style = 'word', tpos = 'top', mode = 'login', shown = -1;
-const valid = () => /^https?:\/\/((www|m)\.)?(youtube\.com|youtu\.be)\//i.test(url.value.trim());
+const valid = () => /^https?:\/\/((www|m|clips)\.)?(youtube\.com|youtu\.be|twitch\.tv|kick\.com)\//i.test(url.value.trim());
 const sync = () => {
   const ok = tab === 'url' ? valid() : $('file').files.length > 0;
   go.disabled = !(ok && rights.checked);
@@ -40,7 +40,9 @@ function render(clips) {
     const el = document.createElement('div'); el.className = 'clip';
     const v = Object.assign(document.createElement('video'), { controls: true, preload: 'metadata', src: c.url });
     const d = document.createElement('div'), t = document.createElement('b'), s = document.createElement('small');
-    t.textContent = `Clip ${i + 1}`; s.textContent = `${mmss(c.start)} – ${mmss(c.end)} · ${c.title}`;
+    t.textContent = `Clip ${i + 1}`;
+    if (c.score) { const bd = document.createElement('span'); bd.className = 'badge'; bd.textContent = `Puntuación ${c.score}/10`; t.append(' ', bd); }
+     s.textContent = `${mmss(c.start)} – ${mmss(c.end)} · ${c.title}`;
     const a = Object.assign(document.createElement('a'), { href: c.url, download: `clipforge-${i + 1}.mp4`, textContent: 'Descargar MP4' });
     d.append(t, s, a); el.append(v, d); return el;
   }));
@@ -67,7 +69,7 @@ $('form').addEventListener('submit', async e => {
   e.preventDefault(); if (go.disabled) return;
   go.disabled = true; $('results').hidden = true; show('Enviando…', 'Preparando el trabajo.', 2);
   const o = { rights: rights.checked, count: +$('count').value, max_duration: +$('duration').value,
-    ratio, quality: +$('quality').value, captions: $('captions').checked, title: $('autotitle').checked, title_pos: tpos, phrases: $('phrases').checked, zoom: $('zoomauto').checked, layout, style,
+    ratio, quality: +$('quality').value, captions: $('captions').checked, title: $('autotitle').checked, title_pos: tpos, phrases: $('phrases').checked, zoom: $('zoomauto').checked, keycolor: $('keycolor').checked, layout, style,
     topic: $('topic').value.trim(), start_at: sec($('from').value), end_at: sec($('to').value) };
   const f = $('file').files[0];
   try {

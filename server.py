@@ -15,7 +15,8 @@ TTL = int(os.getenv("CLIP_TTL_HOURS", 2)) * 3600    # los clips se borran pasado
 MAX_ACTIVE = int(os.getenv("MAX_ACTIVE_JOBS", 4))   # trabajos en cola + en curso
 WHISPER = os.getenv("WHISPER_MODEL", "tiny")
 MAX_UPLOAD = int(os.getenv("MAX_UPLOAD_MB", 500)) * 1024 * 1024
-HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
+HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "twitch.tv", "www.twitch.tv", "m.twitch.tv",
+         "clips.twitch.tv", "kick.com", "www.kick.com"}
 
 shutil.rmtree(TMP, ignore_errors=True)
 OUT.mkdir(exist_ok=True); TMP.mkdir(exist_ok=True)
@@ -38,6 +39,7 @@ class Req(BaseModel):
     title_pos: str = "top"
     phrases: bool = True
     zoom: bool = True
+    keycolor: bool = True
     title: bool = True
     style: str = "word"
     topic: str = Field("", max_length=80)
@@ -77,7 +79,8 @@ def pick_moments(segs, total, count, span, topic=""):
 
 STOP = set("para como pero porque cuando donde este esta esto estos eso esas esos aquí allí tiene tienen tengo hacer entonces también muy más menos solo cada todo todos toda todas with that this have from they there their what when your about".split())
 SUB = {"word": ("&H00FFFFFF", "&H00FFFFFF", False, False), "classic": ("&H00FFFFFF", "&H00FFFFFF", False, False), "yellow": ("&H0000E5FF", "&H0000E5FF", False, False),
-       "highlight": ("&H0000E5FF", "&H00FFFFFF", True, False), "caps": ("&H00FFFFFF", "&H00FFFFFF", False, True)}
+       "highlight": ("&H0000E5FF", "&H00FFFFFF", True, False), "caps": ("&H00FFFFFF", "&H00FFFFFF", False, True), "twolines": ("&H00FFFFFF", "&H00FFFFFF", False, False),
+       "neon": ("&H00A6F235", "&H00A6F235", False, False)}
 
 def ass_time(t):
     cs = round(t * 100); h, cs = divmod(cs, 360000); m, cs = divmod(cs, 6000); s, cs = divmod(cs, 100)
@@ -112,10 +115,14 @@ def num_cards(words, a, z):
         if len(out) == 2: break
     return out
 
-def write_ass(path, W, H, words, a, z, style, mv, title="", tpos="top", mt=0, phrases=(), nums=()):
-    prim, sec, kar, caps = SUB[style]
+def key_words(words, k=4):
+    ws = {w["word"].strip(" ,.;:!?¿¡\"'()").lower() for w in words}
+    return set(sorted((t for t in ws if len(t) >= 6 and t not in STOP), key=len, reverse=True)[:k])
+
+def write_ass(path, W, H, words, a, z, style, mv, title="", tpos="top", mt=0, phrases=(), nums=(), kw=()):
+    prim, sec, kar, caps = SUB[style]; c0 = "&H" + prim[4:] + "&"
     one = style == "word"; m = min(W, H)
-    fs = round(m / (11 if one else 13 if caps else 16)); n = 1 if one else 3 if caps else 4
+    fs = round(m / (11 if one else 13 if caps else 16)); two = style == "twolines"; n = 1 if one else 6 if two else 3 if caps else 4
     ts_, hs, ks = round(m / 11), round(m / 18), round(m / 14)
     st = lambda nm, size, p, o, b, bs, out, al, ml, mvv: (f"Style: {nm},Liberation Sans,{size},{p},{p},{o},{b},1,0,0,0,100,100,0,0,"
                                                          f"{bs},{out},0,{al},{ml},{ml},{mvv},1\n")
@@ -148,9 +155,11 @@ def write_ass(path, W, H, words, a, z, style, mv, title="", tpos="top", mt=0, ph
         for j, w in enumerate(g):
             nxt = g[j + 1]["start"] if j + 1 < len(g) else g[-1]["end"]
             t = w["word"].strip().replace("{", "").replace("}", "")
-            parts.append((f"{{\\k{max(1, round((nxt - w['start']) * 100))}}}" if kar else "") + (t.upper() if caps or one else t))
+            kc = t.strip(" ,.;:!?¿¡\"'()").lower() in kw
+            parts.append((f"{{\\k{max(1, round((nxt - w['start']) * 100))}}}" if kar else "") + (("{\\c&HA6F235&}" if kc else "") + (t.upper() if caps or one else t) + ("{\\c" + c0 + "}" if kc else "")))
         pop = "{\\fscx80\\fscy80\\t(0,110,\\fscx100\\fscy100)}" if one else ""
-        lines.append(f"Dialogue: 0,{ass_time(x)},{ass_time(y)},D,,0,0,0,,{pop}{' '.join(parts)}")
+        txt = " ".join(parts[:3]) + "\\N" + " ".join(parts[3:]) if two and len(parts) > 3 else " ".join(parts)
+        lines.append(f"Dialogue: 0,{ass_time(x)},{ass_time(y)},D,,0,0,0,,{pop}{txt}")
     path.write_text(head + "\n".join(lines) + "\n", encoding="utf-8")
 
 def work(jid, r):
@@ -199,7 +208,9 @@ def work(jid, r):
         W, H = {"9:16": (1080, 1920), "1:1": (1080, 1080), "16:9": (1920, 1080), "4:5": (1080, 1350)}[r.ratio]
         if r.quality == 720: W, H = round(W * 2 / 3), round(H * 2 / 3)
         clips = job["clips"]   # se llena clip a clip: el sitio los muestra al instante
-        for i, (_, a, z, text) in enumerate(moments, 1):
+        scs = [m[0] for m in moments]; lo_, hi_ = min(scs), max(scs)
+        for i, (sc, a, z, text) in enumerate(moments, 1):
+            rating = 8 if hi_ == lo_ else round(6 + 4 * (sc - lo_) / (hi_ - lo_))
             step(f"Exportando clip {i} de {len(moments)}…", 50 + int(48 * (i - 1) / len(moments)))
             if r.layout == "fit":
                 w4, h4 = W // 8 * 2, H // 8 * 2
@@ -220,12 +231,12 @@ def work(jid, r):
             title = make_title(text) if r.title else ""
             if words or title or nums or phr:
                 write_ass(folder / f"{i}.ass", W, H, words, a, z, r.style, mv, title, r.title_pos, mt,
-                          phr, nums)
+                          phr, nums, key_words(allw) if r.keycolor else ())
                 vf += f",ass={i}.ass"
             target = OUT / f"{jid}-{i}.mp4"
             run(["ffmpeg", "-y", "-ss", str(a), "-i", str(video), "-t", str(z - a), "-vf", vf, "-c:v", "libx264",
                  "-preset", "ultrafast", "-crf", "26", "-threads", "2", "-c:a", "aac", "-movflags", "+faststart", str(target)], cwd=folder)
-            clips.append({"url": f"/outputs/{target.name}", "start": round(a), "end": round(z),
+            clips.append({"url": f"/outputs/{target.name}", "start": round(a), "end": round(z), "score": rating,
                           "title": title or " ".join(text.split()[:9]) + "…"})
         job.update(state="done", message="Tus clips están listos.", progress=100)
     except UserError as e:
@@ -359,16 +370,16 @@ def enqueue(jid, vid, r, title):
 def create(r: Req, request: Request, resp: Response):
     p = urlparse(r.youtube_url.strip())
     if p.scheme not in ("http", "https") or p.hostname not in HOSTS:
-        raise HTTPException(400, "Pega un enlace de YouTube válido.")
+        raise HTTPException(400, "Pega un enlace válido de YouTube, Twitch o Kick.")
     vid = admit(r, request, resp)
     return enqueue(uuid.uuid4().hex[:12], vid, r, r.youtube_url.strip()[:70])
 
 @app.post("/api/upload")
 async def upload(request: Request, resp: Response, rights: bool = False, count: int = Query(5, ge=1, le=10),
-                 max_duration: int = Query(45, ge=15, le=90), ratio: str = "9:16", quality: int = 1080, captions: bool = True, layout: str = "fit", title: bool = True, title_pos: str = "top", phrases: bool = True, zoom: bool = True, style: str = "word",
+                 max_duration: int = Query(45, ge=15, le=90), ratio: str = "9:16", quality: int = 1080, captions: bool = True, layout: str = "fit", title: bool = True, title_pos: str = "top", phrases: bool = True, zoom: bool = True, keycolor: bool = True, style: str = "word",
                  topic: str = Query("", max_length=80), start_at: int = Query(0, ge=0), end_at: int = Query(0, ge=0)):
     r = Req(rights=rights, count=count, max_duration=max_duration, ratio=ratio, quality=quality, captions=captions,
-            layout=layout, title=title, title_pos=title_pos, phrases=phrases, zoom=zoom, style=style, topic=topic, start_at=start_at, end_at=end_at)
+            layout=layout, title=title, title_pos=title_pos, phrases=phrases, zoom=zoom, keycolor=keycolor, style=style, topic=topic, start_at=start_at, end_at=end_at)
     vid = admit(r, request, resp)
     jid = uuid.uuid4().hex[:12]; folder = TMP / jid; folder.mkdir(); size = 0
     try:

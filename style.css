@@ -52,3 +52,22 @@ i.lf,i.lt{aspect-ratio:9/16;height:44px}i.lt{background:linear-gradient(var(--li
 .sticky{position:sticky;bottom:0;background:linear-gradient(transparent,var(--card) 18%);padding:18px 0 0;margin-top:8px}
 
 i.tp,i.tc{aspect-ratio:9/16;height:44px}i.tp{background:linear-gradient(#fff 14%,var(--line) 14%)}i.tc{background:linear-gradient(var(--line) 38%,#ffe500 38% 58%,var(--line) 58%)}
+
+/* Tema oscuro con acento menta */
+:root{--bg:#050807;--card:#0b110f;--line:rgba(255,255,255,.09);--ink:#f3f7f5;--mute:#8a968f;--accent:#35f2a6;--field:#080d0b}
+body{background:radial-gradient(620px 380px at 90% -80px,rgba(53,242,166,.2),transparent 70%),var(--bg);min-height:100vh}
+header{position:sticky;top:0;z-index:5;background:rgba(5,8,7,.78);backdrop-filter:blur(10px)}
+.logo{margin-right:auto;font-size:21px;font-weight:700;letter-spacing:-.05em}.who{margin-left:0}
+.pill{background:var(--accent);color:#03130c;font-weight:700;font-size:14px;padding:8px 16px;border-radius:99px;text-decoration:none}
+nav{background:#0b110f}
+.hero{padding:40px 0 22px}.eyebrow{color:var(--accent);font-size:13px;font-weight:600;margin:0 0 10px}
+h1.big{font-size:clamp(34px,9.5vw,54px);line-height:1.02;letter-spacing:-.05em;margin:0 0 14px}h1.big span{color:var(--accent)}
+.lead{color:var(--mute);margin:0;max-width:46ch}
+.card{border-radius:24px;background:linear-gradient(180deg,#0e1512,#0a0f0d)}
+.tabs{border-radius:99px}.tabs button{border-radius:99px}.tabs button[aria-selected=true]{background:#fff;color:#050807}
+.cta{background:var(--accent);color:#03130c;border-radius:99px}
+.tile{border-radius:16px}.tile.on{border-color:var(--accent);color:var(--accent)}.tile.on .aa{color:inherit}
+input:focus,select:focus{border-color:var(--accent);outline:0}
+.badge{display:inline-block;background:rgba(53,242,166,.14);color:var(--accent);border-radius:99px;padding:2px 10px;font-size:12px;font-weight:700}
+.clip{border-top-color:var(--line)}
+.tile i{max-width:72%;max-height:44px;height:auto;min-height:20px}.tile i[style*="9/16"],i.lf,i.lt{height:44px;width:auto}

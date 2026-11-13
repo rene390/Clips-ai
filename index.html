@@ -10,9 +10,10 @@
 </head>
 <body>
 <header>
-  <button id="menu" class="icon" type="button" aria-label="Abrir menú" aria-expanded="false">☰</button>
   <strong class="logo">ClipForge</strong>
   <span id="who" class="who" hidden></span>
+  <a id="start" class="pill" href="#top">Empezar</a>
+  <button id="menu" class="icon" type="button" aria-label="Abrir menú" aria-expanded="false">☰</button>
 </header>
 <nav id="nav" hidden>
   <a href="#top">Inicio</a>
@@ -21,8 +22,13 @@
 </nav>
 
 <main id="top">
+  <section class="hero">
+    <p class="eyebrow">Para tus videos largos</p>
+    <h1 class="big">Clips con subtítulos, <span>listos para publicar.</span></h1>
+    <p class="lead">Pega un link de YouTube, Twitch o Kick, o sube tu video. ClipForge busca los mejores momentos y los exporta en vertical.</p>
+  </section>
   <form id="auth" class="card" novalidate>
-    <h1 id="atitle">Inicia sesión</h1>
+    <h2 id="atitle">Inicia sesión</h2>
     <div class="field"><label for="aemail">Correo electrónico</label><input id="aemail" type="email" autocomplete="email" required></div>
     <div class="field"><label for="apass">Contraseña (mínimo 8 caracteres)</label><input id="apass" type="password" autocomplete="current-password" minlength="8" required></div>
     <p id="aerr" class="err" role="alert" hidden></p>
@@ -31,14 +37,13 @@
   </form>
 
   <form id="form" class="card" novalidate hidden>
-    <h1>Convierte un video largo en clips</h1>
     <div class="tabs" role="tablist">
-      <button id="tab-url" type="button" role="tab" aria-selected="true">Enlace de YouTube</button>
-      <button id="tab-file" type="button" role="tab" aria-selected="false">Subir archivo</button>
+      <button id="tab-url" type="button" role="tab" aria-selected="true">Pegar link</button>
+      <button id="tab-file" type="button" role="tab" aria-selected="false">Subir mi video</button>
     </div>
     <div id="p-url">
-      <input id="url" type="url" inputmode="url" autocomplete="off" placeholder="Pega un enlace de YouTube" aria-label="Enlace de YouTube">
-      <p id="urlerr" class="err" role="alert" hidden>Pega un enlace de youtube.com o youtu.be.</p>
+      <input id="url" type="url" inputmode="url" autocomplete="off" placeholder="Pega un link de YouTube, Twitch o Kick" aria-label="Link del video">
+      <p id="urlerr" class="err" role="alert" hidden>Pega un link de youtube.com, youtu.be, twitch.tv o kick.com.</p>
     </div>
     <div id="prev" class="prev" hidden><img id="pimg" alt=""><strong id="ptitle"></strong></div>
     <div id="p-file" hidden>
@@ -67,11 +72,14 @@
     <h3>Subtítulos <input id="captions" type="checkbox" checked aria-label="Subtítulos activados"></h3>
     <div class="tiles">
       <button type="button" class="tile on" data-style="word"><b class="aa">AA</b>Palabra a palabra</button>
-      <button type="button" class="tile" data-style="classic"><b class="aa">Aa</b>Clásico</button>
+      <button type="button" class="tile" data-style="classic"><b class="aa">Aa</b>Limpio</button>
+      <button type="button" class="tile" data-style="twolines"><b class="aa">Aa<br>Aa</b>Dos líneas</button>
+      <button type="button" class="tile" data-style="neon"><b class="aa y" style="color:#35f2a6">Aa</b>Neón</button>
       <button type="button" class="tile" data-style="yellow"><b class="aa y">Aa</b>Amarillo</button>
       <button type="button" class="tile" data-style="highlight"><b class="aa"><span class="y">A</span>a</b>Resaltado</button>
       <button type="button" class="tile" data-style="caps"><b class="aa">AA</b>Mayúsculas</button>
     </div>
+    <h3>Palabras clave en color <input id="keycolor" type="checkbox" checked aria-label="Palabras clave en color"></h3>
     <details>
       <summary>Más ajustes</summary>
       <div class="grid">
